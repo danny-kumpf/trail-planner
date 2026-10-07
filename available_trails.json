@@ -1,0 +1,126 @@
+{
+    "1st_2nd_flatiron": {
+        "from_gpx": {
+            "distance_mi": 3.3,
+            "vert_ft": 1345,
+            "runnable_mi": 0.29
+        },
+        "manual": {}
+    },
+    "royal_arch": {
+        "from_gpx": {
+            "distance_mi": 3.44,
+            "vert_ft": 1333,
+            "runnable_mi": 0.6
+        },
+        "manual": {
+            "distance_mi": 3.41,
+            "vert_ft": 1486,
+            "runnable_mi": 0.5
+        }
+    },
+    "3rd_flatiron": {
+        "from_gpx": {
+            "distance_mi": 2.74,
+            "vert_ft": 1272,
+            "runnable_mi": 0.18
+        },
+        "manual": {}
+    },
+    "saddle_rock": {
+        "from_gpx": {
+            "distance_mi": 2.81,
+            "vert_ft": 1437,
+            "runnable_mi": 0.4
+        },
+        "manual": {}
+    },
+    "green_from_realization": {
+        "from_gpx": {
+            "distance_mi": 3.75,
+            "vert_ft": 1416,
+            "runnable_mi": 1.14
+        },
+        "manual": {}
+    },
+    "green_from_gregory": {
+        "from_gpx": {
+            "distance_mi": 4.83,
+            "vert_ft": 2324,
+            "runnable_mi": 0.55
+        },
+        "manual": {}
+    },
+    "flagstaff_from_gregory": {
+        "from_gpx": {
+            "distance_mi": 3.67,
+            "vert_ft": 1237,
+            "runnable_mi": 0.6
+        },
+        "manual": {}
+    },
+    "lions_lair": {
+        "from_gpx": {
+            "distance_mi": 5.29,
+            "vert_ft": 910,
+            "runnable_mi": 2.96
+        },
+        "manual": {}
+    },
+    "anemone": {
+        "from_gpx": {
+            "distance_mi": 4.52,
+            "vert_ft": 945,
+            "runnable_mi": 2.42
+        },
+        "manual": {}
+    },
+    "sanitas_loop": {
+        "from_gpx": {
+            "distance_mi": 3.18,
+            "vert_ft": 1255,
+            "runnable_mi": 1.0
+        },
+        "manual": {}
+    },
+    "bear_from_cragmoor": {
+        "from_gpx": {
+            "distance_mi": 5.04,
+            "vert_ft": 2658,
+            "runnable_mi": 0.52
+        },
+        "manual": {}
+    },
+    "bear_from_ncar": {
+        "from_gpx": {
+            "distance_mi": 5.55,
+            "vert_ft": 2780,
+            "runnable_mi": 1.34
+        },
+        "manual": {}
+    },
+    "green_from_ncar": {
+        "from_gpx": {
+            "distance_mi": 11.42,
+            "vert_ft": 2468,
+            "runnable_mi": 5.65
+        },
+        "manual": {}
+    },
+    "bear_and_green_from_ncar": {
+        "from_gpx": {
+            "distance_mi": 13.0,
+            "vert_ft": 3683,
+            "runnable_mi": 6.63
+        },
+        "manual": {}
+    },
+    "bear_from_mesa": {
+        "from_gpx": {
+            "distance_mi": 7.72,
+            "vert_ft": 2866,
+            "runnable_mi": 2.47
+        },
+        "manual": {}
+    }
+}

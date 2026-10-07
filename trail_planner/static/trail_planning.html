@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trail Planning</title>
+<link rel="stylesheet" href="/static/site.css">
+<style>
+  form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+  input[type=number] {
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    width: 100%;
+  }
+  .range { display: flex; gap: 6px; align-items: center; }
+  .checkbox { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 8px; }
+  button {
+    grid-column: 1 / -1;
+    font: inherit;
+    font-weight: 600;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+  }
+  .status { margin: 24px 0 8px; }
+  .status.warn { color: var(--warn); }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+  tfoot td { font-weight: 600; border-bottom: none; }
+  .summary { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 12px; color: var(--muted); }
+  .summary strong { color: var(--text); }
+  .excluded { color: var(--muted); font-size: 0.9rem; }
+  details { margin-top: 32px; }
+  summary { font-weight: 600; color: var(--muted); cursor: pointer; }
+  summary h2 { display: inline; margin: 0; }
+  details[open] summary { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<header class="tabs">
+  <nav>
+    <a href="/trail-planning" aria-current="page">Trail Planning</a>
+    <a href="/training-log">Training Log</a>
+  </nav>
+</header>
+<main>
+  <h2>Plan</h2>
+
+  <form id="plan-form">
+    <label>Target vert (ft)
+      <input type="number" id="target-vert-ft" value="6000" min="1" step="any" required>
+    </label>
+    <label>Target running (mi)
+      <input type="number" id="target-running-mi" value="2" min="0" step="any" required>
+    </label>
+    <label>Outings
+      <span class="range">
+        <input type="number" id="min-outings" value="1" min="1" step="1" required>
+        to
+        <input type="number" id="max-outings" value="6" min="1" step="1" required>
+      </span>
+    </label>
+    <label>Vert tolerance (%)
+      <input type="number" id="vert-tolerance-pct" value="3" min="0" step="any" required>
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" id="allow-repeats"> Allow repeat trails
+    </label>
+    <button type="submit">Shuffle</button>
+  </form>
+
+  <div id="result"></div>
+
+  <details id="included-details">
+    <summary><h2>Included Trails</h2></summary>
+    <div id="included">Loading…</div>
+  </details>
+
+  <h2>Excluded Trails (incomplete data)</h2>
+  <p class="excluded" id="excluded">Loading…</p>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtFt = (ft) => Math.round(ft).toLocaleString() + " ft";
+const fmtMi = (mi) => mi.toFixed(2) + " mi";
+const fmtPct = (frac) => (frac >= 0 ? "+" : "") + (frac * 100).toFixed(1) + "%";
+const prettyName = (name) => name.replaceAll("_", " ");
+
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+function trailsTable(trails) {
+  const table = el("table");
+  const head = table.createTHead().insertRow();
+  for (const h of ["Trail", "Vert", "Distance", "Runnable"]) head.append(el("th", h));
+  const body = table.createTBody();
+  for (const t of trails) {
+    const row = body.insertRow();
+    row.append(el("td", prettyName(t.name)), el("td", fmtFt(t.vert_ft)),
+               el("td", fmtMi(t.distance_mi)), el("td", fmtMi(t.runnable_mi)));
+  }
+  return table;
+}
+
+function planTable(plan) {
+  const table = trailsTable(plan.trails);
+  const foot = table.createTFoot().insertRow();
+  foot.append(el("td", `Total (${plan.trails.length} outing${plan.trails.length === 1 ? "" : "s"})`),
+              el("td", fmtFt(plan.total_vert_ft)), el("td", fmtMi(plan.total_distance_mi)),
+              el("td", fmtMi(plan.total_runnable_mi)));
+  return table;
+}
+
+function planSummary(plan, targetRunningMi) {
+  const summary = el("div", undefined, "summary");
+  const item = (label, value) => {
+    const span = el("span", label + " ");
+    span.append(el("strong", value));
+    return span;
+  };
+  summary.append(item("Vert vs target:", fmtPct(plan.vert_error_frac)),
+                 item("Runnable available:", `${fmtMi(plan.total_runnable_mi)} for ${fmtMi(targetRunningMi)} target`));
+  return summary;
+}
+
+function renderResult(result, targetRunningMi) {
+  const out = $("result");
+  out.replaceChildren();
+  switch (result.status) {
+    case "found":
+      out.append(planTable(result.plan), planSummary(result.plan, targetRunningMi));
+      break;
+    case "no_plan_in_tolerance":
+      out.append(el("p", "No plan lands within the vert tolerance. " +
+                    `Recommended tolerance: ${(result.recommended_tolerance_frac * 100).toFixed(1)}% ` +
+                    `(${result.num_plans_at_recommended} option${result.num_plans_at_recommended === 1 ? "" : "s"}). ` +
+                    "Closest plan with enough runnable miles:", "status warn"),
+                 planTable(result.closest), planSummary(result.closest, targetRunningMi));
+      break;
+    case "not_enough_runnable":
+      out.append(el("p", `Not enough runnable miles: the most any plan in this outing range offers is ${fmtMi(result.max_runnable_mi)}.`, "status warn"));
+      break;
+    case "no_combinations":
+      out.append(el("p", "Too few trails with complete data to fill any outing count in this range.", "status warn"));
+      break;
+  }
+}
+
+$("plan-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const targetRunningMi = Number($("target-running-mi").value);
+  const response = await fetch("/api/plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      target_vert_ft: Number($("target-vert-ft").value),
+      target_running_mi: targetRunningMi,
+      min_outings: Number($("min-outings").value),
+      max_outings: Number($("max-outings").value),
+      vert_tolerance_pct: Number($("vert-tolerance-pct").value),
+      allow_repeats: $("allow-repeats").checked,
+    }),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    $("result").replaceChildren(el("p", result.error, "status warn"));
+    return;
+  }
+  renderResult(result, targetRunningMi);
+});
+
+async function loadCatalog() {
+  const catalog = await (await fetch("/api/trails")).json();
+  $("included").replaceChildren(catalog.complete.length ? trailsTable(catalog.complete) : el("p", "None", "excluded"));
+  $("excluded").textContent = catalog.incomplete_names.length
+    ? catalog.incomplete_names.map(prettyName).join(", ")
+    : "None";
+}
+
+loadCatalog();
+// Reload when expanded, so trails processed since the page loaded show up.
+$("included-details").addEventListener("toggle", (event) => {
+  if (event.target.open) loadCatalog();
+});
+</script>
+</body>
+</html>

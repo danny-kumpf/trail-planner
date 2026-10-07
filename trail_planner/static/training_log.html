@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Log</title>
+<link rel="stylesheet" href="/static/site.css">
+<style>
+  :root {
+    --page-width: 1280px;
+    --label-width: 170px;
+    --type-hike: #2b5a1d;        --type-hike-ink: #ffffff;
+    --type-trail_run: #6cc644;   --type-trail_run-ink: #12240a;
+    --type-bike: #f26b21;        --type-bike-ink: #ffffff;
+    --type-race: #8f2f12;        --type-race-ink: #ffffff;
+    --type-ski: #2f7fd0;         --type-ski-ink: #ffffff;
+    --type-workout: #857a26;     --type-workout-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --type-hike: #4f8f38;
+      --type-race: #c04a22;
+      --type-workout: #a99b38;     --type-workout-ink: #1a1805;
+    }
+  }
+
+  .log-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-bottom: 20px; }
+  h1 { font-size: 1.5rem; margin: 0; }
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  .sync-button {
+    font-weight: 600;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+  }
+  .sync-button:disabled { opacity: 0.6; cursor: progress; }
+  .sync-status { color: var(--muted); font-size: 0.9rem; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 16px; }
+  select, input {
+    font: inherit;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 0 auto; padding: 0; list-style: none; font-size: 0.85rem; }
+  .legend li { display: flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--fill); }
+
+  .log-body { display: flex; gap: 16px; align-items: flex-start; }
+  .grid-scroll { flex: 1; min-width: 0; overflow-x: auto; }
+  .grid { min-width: 860px; }
+  .grid-row {
+    display: grid;
+    grid-template-columns: var(--label-width) repeat(var(--num-columns), minmax(0, 1fr));
+    border-bottom: 1px solid var(--border);
+    scroll-margin-top: 56px;
+  }
+  .grid-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg);
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .grid-head > * { padding: 10px 4px; text-align: center; }
+  .grid-head > :first-child { text-align: left; }
+  .day-heading {
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.8rem;
+    padding: 4px 0;
+    width: 100%;
+  }
+  .day-heading:hover { border-color: var(--border); color: var(--text); }
+  .day-heading.week-start { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); color: var(--text); }
+
+  .row-label { padding: 16px 8px 16px 0; }
+  .period { font-weight: 600; margin-bottom: 8px; }
+  .totals { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .totals dt { color: var(--muted); }
+  .totals dd { margin: 0; font-weight: 600; }
+
+  .cell { padding: 16px 4px; display: flex; flex-direction: column; align-items: center; gap: 14px; min-height: 110px; }
+  .cell-range { font-size: 0.75rem; color: var(--muted); align-self: stretch; text-align: center; margin-bottom: -6px; }
+  .rest { color: var(--border); font-size: 0.8rem; margin: auto 0; }
+
+  .activity { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; max-width: 100%; }
+  .circle {
+    position: relative;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    padding: 0;
+    background: var(--fill);
+    color: var(--ink);
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .circle:hover { filter: brightness(1.15); }
+  .tip {
+    position: fixed;
+    z-index: 10;
+    max-width: 280px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    white-space: pre-line;
+    pointer-events: none;
+  }
+  .circle:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .grade {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-size: 0.7rem;
+    line-height: 18px;
+  }
+  .activity-name { font-size: 0.8rem; font-weight: 600; overflow-wrap: anywhere; }
+  .activity-metrics { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .activity-metrics span { white-space: nowrap; }
+  .edited { color: var(--text); text-decoration: underline dotted; text-underline-offset: 2px; }
+  .cluster { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; }
+
+  .timeline {
+    flex: none;
+    width: 150px;
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    font-size: 0.85rem;
+  }
+  .timeline ul { list-style: none; margin: 0; padding: 0; }
+  .timeline button { background: none; border: none; padding: 3px 6px; border-radius: 4px; text-align: left; width: 100%; }
+  .timeline button:hover { background: var(--surface); }
+  .timeline .year { font-weight: 700; margin-top: 8px; }
+  .timeline .month { padding-left: 14px; color: var(--muted); }
+  .timeline .race { display: flex; gap: 6px; align-items: baseline; padding: 0 6px 2px 20px; font-size: 0.8rem; color: var(--muted); }
+  .timeline .race .swatch { flex: none; transform: translateY(1px); }
+
+  .message { color: var(--muted); white-space: pre-line; }
+  .message.error { color: var(--warn); }
+
+  dialog {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    width: min(420px, calc(100vw - 32px));
+  }
+  dialog::backdrop { background: rgb(0 0 0 / 0.4); }
+  dialog h2 { color: var(--text); font-size: 1.1rem; margin: 0; }
+  .editor-date { color: var(--muted); margin: 2px 0 16px; font-size: 0.9rem; }
+  .editor-fields { display: grid; grid-template-columns: auto 1fr auto; gap: 10px 10px; align-items: center; }
+  .editor-fields label { font-size: 0.9rem; color: var(--muted); }
+  .editor-fields input, .editor-fields select { width: 100%; }
+  .editor-fields input::placeholder { color: var(--muted); opacity: 0.7; }
+  .reset-button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-size: 0.85rem; }
+  .editor-hint { font-size: 0.8rem; color: var(--muted); margin: 14px 0 0; }
+  .editor-error { color: var(--warn); font-size: 0.9rem; margin: 10px 0 0; }
+  .editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  .editor-actions button { border-radius: 8px; padding: 8px 16px; font-weight: 600; }
+  .editor-actions .cancel { background: none; border: 1px solid var(--border); }
+  .editor-actions .save { background: var(--accent); color: var(--accent-text); border: none; }
+
+  @media (max-width: 700px) {
+    /* Stretched, so the grid scrolls sideways within the screen width rather than widening the page. */
+    .log-body { flex-direction: column; align-items: stretch; }
+    .timeline { display: none; }
+    .legend { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header class="tabs">
+  <nav>
+    <a href="/trail-planning">Trail Planning</a>
+    <a href="/training-log" aria-current="page">Training Log</a>
+  </nav>
+</header>
+<main>
+  <div class="log-header">
+    <h1>Training Log</h1>
+    <button type="button" class="sync-button" id="sync">⟳ Sync with Strava</button>
+    <span class="sync-status" id="sync-status"></span>
+  </div>
+
+  <div class="controls">
+    <select id="type-filter" aria-label="Activity type"></select>
+    <select id="view" aria-label="View">
+      <option value="weekly">Weekly</option>
+      <option value="monthly">Monthly</option>
+      <option value="yearly">Yearly</option>
+    </select>
+    <ul class="legend" id="legend"></ul>
+  </div>
+
+  <p class="message" id="message" hidden></p>
+
+  <div class="log-body">
+    <div class="grid-scroll"><div class="grid" id="grid"></div></div>
+    <nav class="timeline" id="timeline" aria-label="Jump to"></nav>
+  </div>
+
+  <dialog id="editor">
+    <form id="editor-form" method="dialog">
+      <h2 id="editor-title"></h2>
+      <p class="editor-date" id="editor-date"></p>
+      <div class="editor-fields">
+        <label for="edit-type">Type</label>
+        <select id="edit-type"></select>
+        <button type="button" class="reset-button" data-reset="edit-type">Reset</button>
+
+        <label for="edit-moving-time">Time</label>
+        <input id="edit-moving-time" data-field="moving_time_s" autocomplete="off">
+        <button type="button" class="reset-button" data-reset="edit-moving-time">Reset</button>
+
+        <label for="edit-distance">Distance (mi)</label>
+        <input id="edit-distance" data-field="distance_mi" type="number" min="0" step="any">
+        <button type="button" class="reset-button" data-reset="edit-distance">Reset</button>
+
+        <label for="edit-vert">Vert (ft)</label>
+        <input id="edit-vert" data-field="vert_ft" type="number" min="0" step="any">
+        <button type="button" class="reset-button" data-reset="edit-vert">Reset</button>
+
+        <label for="edit-running">Running (mi)</label>
+        <input id="edit-running" data-field="running_mi" type="number" min="0" step="any">
+        <button type="button" class="reset-button" data-reset="edit-running">Reset</button>
+
+        <label for="edit-grade">Grade</label>
+        <select id="edit-grade">
+          <option value="">No grade</option>
+          <option>A</option><option>B</option><option>C</option><option>D</option><option>F</option>
+        </select>
+        <button type="button" class="reset-button" data-reset="edit-grade">Reset</button>
+      </div>
+      <p class="editor-hint">Greyed values are what was recorded. Type a value to override it; Reset goes back to the recorded value.</p>
+      <p class="editor-error" id="editor-error" hidden></p>
+      <div class="editor-actions">
+        <button type="button" class="cancel" id="editor-cancel">Cancel</button>
+        <button type="submit" class="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+</main>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+// An element of `tag` holding `child`.
+function wrap(tag, child, className) {
+  const node = el(tag, undefined, className);
+  node.append(child);
+  return node;
+}
+
+const ACTIVITY_TYPES = [
+  { id: "hike", label: "Hike" },
+  { id: "trail_run", label: "Trail Run" },
+  { id: "bike", label: "Bike" },
+  { id: "race", label: "Race" },
+  { id: "ski", label: "Ski" },
+  { id: "workout", label: "Workout" },
+];
+const typeLabel = (typeId) => ACTIVITY_TYPES.find((t) => t.id === typeId).label;
+const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_FULL_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_FULL_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August",
+                          "September", "October", "November", "December"];
+const SATURDAY = 6;
+
+// ---- Calendar days ----
+// A day is a whole number counted from 1970-01-01. Dates are plain calendar dates with no time
+// zone, so stepping by days is integer arithmetic and never trips over daylight saving.
+const MS_PER_DAY = 86_400_000;
+const dayFromDate = (year, month, date) => Date.UTC(year, month - 1, date) / MS_PER_DAY;  // month is 1–12
+const dateOfDay = (day) => {
+  const d = new Date(day * MS_PER_DAY);
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, date: d.getUTCDate() };
+};
+const weekdayOfDay = (day) => new Date(day * MS_PER_DAY).getUTCDay();  // 0 is Sunday
+// The local calendar date an activity started on, read from its wall-clock start time.
+const dayOfLocalStart = (iso) => dayFromDate(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)), Number(iso.slice(8, 10)));
+const today = (() => {
+  const now = new Date();
+  return dayFromDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
+})();
+const firstDayOfWeek = (day, weekStartWeekday) => day - ((weekdayOfDay(day) - weekStartWeekday + 7) % 7);
+const firstDayOfMonth = (year, month) => dayFromDate(year, month, 1);
+const lastDayOfMonth = (year, month) => dayFromDate(year, month + 1, 1) - 1;
+
+// ---- Formatting ----
+const fmtFt = (ft) => Math.round(ft).toLocaleString() + " ft";
+const fmtMi = (mi) => mi.toFixed(2) + " mi";
+const fmtClock = (s) => {
+  const totalMin = Math.round(s / 60);
+  return `${Math.floor(totalMin / 60)}:${String(totalMin % 60).padStart(2, "0")}`;
+};
+const fmtDuration = (s) => {
+  const totalMin = Math.round(s / 60);
+  const h = Math.floor(totalMin / 60);
+  return h ? `${h}h ${totalMin % 60}m` : `${totalMin}m`;
+};
+function fmtDayRange(firstDay, lastDay) {
+  const first = dateOfDay(firstDay);
+  const last = dateOfDay(lastDay);
+  const thisYear = dateOfDay(today).year;
+  const withYear = (d, text) => (d.year === thisYear ? text : `${text}, ${d.year}`);
+  if (first.year !== last.year) {
+    return `${withYear(first, `${MONTH_NAMES[first.month - 1]} ${first.date}`)} – ` +
+           withYear(last, `${MONTH_NAMES[last.month - 1]} ${last.date}`);
+  }
+  const lastText = first.month === last.month ? `${last.date}` : `${MONTH_NAMES[last.month - 1]} ${last.date}`;
+  return withYear(last, `${MONTH_NAMES[first.month - 1]} ${first.date} – ${lastText}`);
+}
+// Same as fmtDayRange, without the year and with a tight dash, for the small labels in monthly cells.
+function fmtShortDayRange(firstDay, lastDay) {
+  const first = dateOfDay(firstDay);
+  const last = dateOfDay(lastDay);
+  if (firstDay === lastDay) return `${MONTH_NAMES[first.month - 1]} ${first.date}`;
+  return `${MONTH_NAMES[first.month - 1]} ${first.date}–${last.date}`;
+}
+
+// ---- State ----
+const WEEK_START_STORAGE_KEY = "trainingLogWeekStartWeekday";
+
+function loadWeekStartWeekday() {
+  try {
+    const stored = localStorage.getItem(WEEK_START_STORAGE_KEY);
+    return stored === null ? SATURDAY : Number(stored);
+  } catch {
+    return SATURDAY;
+  }
+}
+
+function saveWeekStartWeekday(weekday) {
+  try {
+    localStorage.setItem(WEEK_START_STORAGE_KEY, String(weekday));
+  } catch {
+    // Storage unavailable: the choice still holds until the page is reloaded.
+  }
+}
+
+let activities = [];
+let weekStartWeekday = loadWeekStartWeekday();
+
+// ---- Periods ----
+// A period is one row: a span of days, split into the columns shown for it.
+
+function weeklyPeriods(firstDay, lastDay) {
+  const periods = [];
+  for (let start = firstDayOfWeek(lastDay, weekStartWeekday); start + 6 >= firstDay; start -= 7) {
+    periods.push({
+      firstDay: start,
+      lastDay: start + 6,
+      label: fmtDayRange(start, start + 6),
+      columns: Array.from({ length: 7 }, (_, i) => ({ firstDay: start + i, lastDay: start + i })),
+    });
+  }
+  return periods;
+}
+
+// The month cut at each week's start day, so its first and last pieces may be partial weeks.
+function weeksOfMonth(year, month) {
+  const pieces = [];
+  let pieceStart = firstDayOfMonth(year, month);
+  const monthEnd = lastDayOfMonth(year, month);
+  for (let day = pieceStart + 1; day <= monthEnd; day++) {
+    if (weekdayOfDay(day) === weekStartWeekday) {
+      pieces.push({ firstDay: pieceStart, lastDay: day - 1 });
+      pieceStart = day;
+    }
+  }
+  pieces.push({ firstDay: pieceStart, lastDay: monthEnd });
+  return pieces;
+}
+
+function monthlyPeriods(firstDay, lastDay) {
+  const periods = [];
+  // Step back a month at a time by going to the day before each month's first day.
+  for (let day = lastDay; day >= firstDay || periods.length === 0; ) {
+    const { year, month } = dateOfDay(day);
+    periods.push({
+      firstDay: firstDayOfMonth(year, month),
+      lastDay: lastDayOfMonth(year, month),
+      label: `${MONTH_FULL_NAMES[month - 1]} ${year}`,
+      columns: weeksOfMonth(year, month),
+    });
+    day = firstDayOfMonth(year, month) - 1;
+  }
+  return periods;
+}
+
+function yearlyPeriods(firstDay, lastDay) {
+  const periods = [];
+  for (let year = dateOfDay(lastDay).year; year >= dateOfDay(firstDay).year; year--) {
+    periods.push({
+      firstDay: dayFromDate(year, 1, 1),
+      lastDay: dayFromDate(year, 12, 31),
+      label: String(year),
+      columns: Array.from({ length: 12 }, (_, i) => ({
+        firstDay: firstDayOfMonth(year, i + 1),
+        lastDay: lastDayOfMonth(year, i + 1),
+      })),
+    });
+  }
+  return periods;
+}
+
+const VIEWS = {
+  weekly: { periods: weeklyPeriods, numColumns: 7, circleScale: { fullDiameterPx: 80, minDiameterPx: 16, maxDiameterPx: 120 } },
+  // Up to 6 pieces: a 31-day month can start on the day before a week start and end on one.
+  monthly: { periods: monthlyPeriods, numColumns: 6, circleScale: { fullDiameterPx: 36, minDiameterPx: 10, maxDiameterPx: 54 } },
+  yearly: { periods: yearlyPeriods, numColumns: 12, circleScale: { fullDiameterPx: 26, minDiameterPx: 8, maxDiameterPx: 40 } },
+};
+
+// ---- Activities ----
+
+const isShown = (activity) => $("type-filter").value === "all" || activity.type === $("type-filter").value;
+
+function activitiesByDay(shownActivities) {
+  const byDay = new Map();
+  for (const a of shownActivities) {
+    const day = dayOfLocalStart(a.start_local);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(a);
+  }
+  return byDay;
+}
+
+function activitiesBetween(byDay, firstDay, lastDay) {
+  const found = [];
+  for (let day = firstDay; day <= lastDay; day++) found.push(...(byDay.get(day) ?? []));
+  return found;
+}
+
+function totals(periodActivities) {
+  const sum = (field) => periodActivities.reduce((total, a) => total + a[field], 0);
+  return { vert_ft: sum("vert_ft"), moving_time_s: sum("moving_time_s"), distance_mi: sum("distance_mi"), running_mi: sum("running_mi") };
+}
+
+// A circle's area is proportional to its time; `fullDiameterPx` is the diameter of a 4-hour activity.
+const FULL_CIRCLE_TIME_S = 4 * 3600;
+function circleDiameterPx(movingTimeS, scale) {
+  const diameterPx = scale.fullDiameterPx * Math.sqrt(movingTimeS / FULL_CIRCLE_TIME_S);
+  return Math.min(scale.maxDiameterPx, Math.max(scale.minDiameterPx, diameterPx));
+}
+
+function activitySummary(a) {
+  const grade = a.grade ? `   Grade ${a.grade}` : "";
+  return `${a.name}${grade}\n${fmtClock(a.moving_time_s)} · ${fmtFt(a.vert_ft)} · ${fmtMi(a.distance_mi)} · ${fmtMi(a.running_mi)} run`;
+}
+
+// The smallest circle with room to write its time inside.
+const MIN_DIAMETER_FOR_TIME_PX = 36;
+
+function activityCircle(a, scale, { withTime = false, withGrade = false } = {}) {
+  const diameterPx = circleDiameterPx(a.moving_time_s, scale);
+  const circle = el("button", undefined, "circle");
+  circle.type = "button";
+  circle.style.width = circle.style.height = `${diameterPx}px`;
+  circle.style.setProperty("--fill", `var(--type-${a.type})`);
+  circle.style.setProperty("--ink", `var(--type-${a.type}-ink)`);
+  circle.dataset.tip = activitySummary(a);
+  circle.setAttribute("aria-label", `Edit ${a.name}`);
+  circle.addEventListener("click", () => openEditor(a));
+  if (withTime) circle.append(el("span", fmtClock(a.moving_time_s)));
+  if (withGrade && a.grade) {
+    const badge = el("span", a.grade, "grade");
+    // On the circle's edge at the top right, 45° from vertical.
+    const offsetPx = diameterPx * (1 - Math.SQRT1_2) / 2 - 10;
+    badge.style.top = badge.style.right = `${offsetPx}px`;
+    circle.append(badge);
+  }
+  return circle;
+}
+
+function metricSpan(a, field, text) {
+  const span = el("span", text);
+  if (a.overridden_fields.includes(field)) {
+    span.className = "edited";
+    span.dataset.tip = `Edited; recorded ${formatField(field, a.recorded[field])}`;
+  }
+  return span;
+}
+
+function formatField(field, value) {
+  return { moving_time_s: fmtClock, vert_ft: fmtFt, distance_mi: fmtMi, running_mi: fmtMi }[field](value);
+}
+
+function activityWithDetails(a, scale) {
+  // Time goes inside the circle when it fits; otherwise it leads the metrics underneath. An
+  // edited time always goes underneath, where it can carry its edited mark.
+  const timeInCircle = circleDiameterPx(a.moving_time_s, scale) >= MIN_DIAMETER_FOR_TIME_PX &&
+                       !a.overridden_fields.includes("moving_time_s");
+  const parts = [metricSpan(a, "vert_ft", fmtFt(a.vert_ft)), metricSpan(a, "distance_mi", fmtMi(a.distance_mi)),
+                 metricSpan(a, "running_mi", `${fmtMi(a.running_mi)} run`)];
+  if (!timeInCircle) parts.unshift(metricSpan(a, "moving_time_s", fmtClock(a.moving_time_s)));
+  const metrics = el("div", undefined, "activity-metrics");
+  parts.forEach((part, i) => metrics.append(...(i ? [" · ", part] : [part])));
+
+  const wrapper = el("div", undefined, "activity");
+  wrapper.append(activityCircle(a, scale, { withTime: timeInCircle, withGrade: true }),
+                 el("div", a.name, "activity-name"), metrics);
+  return wrapper;
+}
+
+// ---- Rendering ----
+
+function headingRow(view) {
+  const row = el("div", undefined, "grid-row grid-head");
+  if (view === "weekly") {
+    row.append(el("div", "Click a day to start weeks on it"));
+    for (let i = 0; i < 7; i++) {
+      const weekday = (weekStartWeekday + i) % 7;
+      const heading = el("button", WEEKDAY_NAMES[weekday], "day-heading" + (i === 0 ? " week-start" : ""));
+      heading.type = "button";
+      heading.dataset.tip = i === 0 ? `Weeks start on ${WEEKDAY_FULL_NAMES[weekday]}` : `Start weeks on ${WEEKDAY_FULL_NAMES[weekday]}`;
+      heading.addEventListener("click", () => {
+        weekStartWeekday = weekday;
+        saveWeekStartWeekday(weekday);
+        render();
+      });
+      row.append(wrap("div", heading));
+    }
+  } else if (view === "monthly") {
+    row.append(el("div", `Weeks start on ${WEEKDAY_FULL_NAMES[weekStartWeekday]}`));
+    for (let i = 1; i <= 6; i++) row.append(el("div", `Week ${i}`));
+  } else {
+    row.append(el("div"));
+    for (const name of MONTH_NAMES) row.append(el("div", name));
+  }
+  return row;
+}
+
+function periodLabel(period, periodActivities) {
+  const label = el("div", undefined, "row-label");
+  label.append(el("div", period.label, "period"));
+  const t = totals(periodActivities);
+  const list = el("dl", undefined, "totals");
+  for (const [name, value] of [["Vert", fmtFt(t.vert_ft)], ["Time", fmtDuration(t.moving_time_s)],
+                               ["Distance", fmtMi(t.distance_mi)], ["Running", fmtMi(t.running_mi)]]) {
+    list.append(el("dt", name), el("dd", value));
+  }
+  label.append(list);
+  return label;
+}
+
+function periodCell(view, column, columnActivities, scale) {
+  const cell = el("div", undefined, "cell");
+  if (view === "weekly") {
+    if (!columnActivities.length) cell.append(el("span", "Rest", "rest"));
+    for (const a of columnActivities) cell.append(activityWithDetails(a, scale));
+  } else {
+    if (view === "monthly") cell.append(el("div", fmtShortDayRange(column.firstDay, column.lastDay), "cell-range"));
+    const cluster = el("div", undefined, "cluster");
+    for (const a of columnActivities) cluster.append(activityCircle(a, scale));
+    cell.append(cluster);
+  }
+  return cell;
+}
+
+// ---- Tooltips ----
+// Our own, for elements with a `data-tip`: browsers wait about a second before showing a `title`.
+
+const TIP_GAP_PX = 8;
+let tipTarget = null;
+
+function showTip(target) {
+  const tip = $("tip");
+  tip.textContent = target.dataset.tip;
+  tip.hidden = false;
+  target.setAttribute("aria-describedby", "tip");
+  tipTarget = target;
+  // Centred above the element, or below it if there's no room above, and inside the window.
+  const box = target.getBoundingClientRect();
+  const tipBox = tip.getBoundingClientRect();
+  const topAbovePx = box.top - tipBox.height - TIP_GAP_PX;
+  const leftPx = box.left + box.width / 2 - tipBox.width / 2;
+  tip.style.top = `${topAbovePx >= 0 ? topAbovePx : box.bottom + TIP_GAP_PX}px`;
+  tip.style.left = `${Math.max(TIP_GAP_PX, Math.min(leftPx, window.innerWidth - tipBox.width - TIP_GAP_PX))}px`;
+}
+
+function hideTip() {
+  if (!tipTarget) return;
+  tipTarget.removeAttribute("aria-describedby");
+  tipTarget = null;
+  $("tip").hidden = true;
+}
+
+function followTip(event) {
+  const target = event.target.closest?.("[data-tip]");
+  if (!target) hideTip();
+  else if (target !== tipTarget) showTip(target);
+}
+
+document.addEventListener("pointerover", followTip);
+// Only focus from the keyboard: after the editor closes, the browser puts focus back on the circle.
+document.addEventListener("focusin", (event) => { if (event.target.matches(":focus-visible")) followTip(event); });
+document.addEventListener("focusout", hideTip);
+// Leaving the window.
+document.addEventListener("pointerout", (event) => { if (!event.relatedTarget) hideTip(); });
+// The tip is placed in the window, so it would be left behind by scrolling the page or the grid.
+document.addEventListener("scroll", hideTip, { capture: true, passive: true });
+document.addEventListener("click", hideTip);
+
+function render() {
+  hideTip();
+  const view = $("view").value;
+  const { periods: periodsFor, numColumns, circleScale } = VIEWS[view];
+  const shown = activities.filter(isShown);
+  const byDay = activitiesByDay(shown);
+  const days = activities.map((a) => dayOfLocalStart(a.start_local));
+  const firstDay = Math.min(today, ...days);
+  const lastDay = Math.max(today, ...days);
+
+  const grid = $("grid");
+  grid.style.setProperty("--num-columns", numColumns);
+  const rows = [headingRow(view)];
+  for (const period of periodsFor(firstDay, lastDay)) {
+    const row = el("div", undefined, "grid-row");
+    row.dataset.firstDay = period.firstDay;
+    row.dataset.lastDay = period.lastDay;
+    row.append(periodLabel(period, activitiesBetween(byDay, period.firstDay, period.lastDay)));
+    for (const column of period.columns) {
+      row.append(periodCell(view, column, activitiesBetween(byDay, column.firstDay, column.lastDay), circleScale));
+    }
+    rows.push(row);
+  }
+  grid.replaceChildren(...rows);
+  renderTimeline(firstDay, lastDay);
+}
+
+// Scroll to the row holding `day`, or the newest one if `day` is past the end of the log.
+function scrollToDay(day) {
+  const rows = [...$("grid").querySelectorAll(".grid-row[data-first-day]")];
+  const row = rows.find((r) => Number(r.dataset.firstDay) <= day && day <= Number(r.dataset.lastDay)) ?? rows[0];
+  row?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderTimeline(firstDay, lastDay) {
+  const races = activities.filter((a) => a.type === "race");
+  const list = el("ul");
+  const first = dateOfDay(firstDay);
+  const last = dateOfDay(lastDay);
+  for (let year = last.year; year >= first.year; year--) {
+    const yearButton = el("button", String(year));
+    yearButton.addEventListener("click", () => scrollToDay(Math.min(lastDay, dayFromDate(year, 12, 31))));
+    list.append(wrap("li", yearButton, "year"));
+    const newestMonth = year === last.year ? last.month : 12;
+    const oldestMonth = year === first.year ? first.month : 1;
+    for (let month = newestMonth; month >= oldestMonth; month--) {
+      const monthButton = el("button", MONTH_NAMES[month - 1]);
+      monthButton.addEventListener("click", () => scrollToDay(Math.min(lastDay, lastDayOfMonth(year, month))));
+      list.append(wrap("li", monthButton, "month"));
+      for (const race of races) {
+        const raceDate = dateOfDay(dayOfLocalStart(race.start_local));
+        if (raceDate.year !== year || raceDate.month !== month) continue;
+        const item = el("li", undefined, "race");
+        const swatch = el("span", undefined, "swatch");
+        swatch.style.setProperty("--fill", "var(--type-race)");
+        item.append(swatch, el("span", race.name));
+        list.append(item);
+      }
+    }
+  }
+  $("timeline").replaceChildren(list);
+}
+
+// ---- Editor ----
+
+let editing = null;
+const OVERRIDE_INPUTS = ["edit-moving-time", "edit-distance", "edit-vert", "edit-running"];
+
+// "1:35" or "1:35:20" as seconds, or null if it isn't a time.
+function parseClock(text) {
+  const match = /^(\d+):([0-5]\d)(?::([0-5]\d))?$/.exec(text.trim());
+  if (!match) return null;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3] ?? 0);
+}
+
+function openEditor(a) {
+  editing = a;
+  $("editor-title").textContent = a.name;
+  const start = new Date(a.start_local);
+  $("editor-date").textContent =
+    `${typeLabel(a.type)} · ` +
+    start.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + " · " +
+    start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  for (const id of OVERRIDE_INPUTS) {
+    const input = $(id);
+    const field = input.dataset.field;
+    const isTime = field === "moving_time_s";
+    input.placeholder = isTime ? fmtClock(a.recorded[field]) : String(a.recorded[field]);
+    const value = a[field];
+    input.value = a.overridden_fields.includes(field) ? (isTime ? fmtClock(value) : String(value)) : "";
+  }
+  // The empty choice means "no override", labelled with the recorded type it leaves in effect.
+  $("edit-type").replaceChildren(new Option(`${typeLabel(a.recorded.type)} (recorded)`, ""),
+                                 ...ACTIVITY_TYPES.map((t) => new Option(t.label, t.id)));
+  $("edit-type").value = a.overridden_fields.includes("type") ? a.type : "";
+  $("edit-grade").value = a.grade ?? "";
+  $("editor-error").hidden = true;
+  $("editor").showModal();
+}
+
+function editedManual() {
+  const manual = {};
+  if ($("edit-grade").value) manual.grade = $("edit-grade").value;
+  if ($("edit-type").value) manual.type = $("edit-type").value;
+  for (const id of OVERRIDE_INPUTS) {
+    const input = $(id);
+    const text = input.value.trim();
+    if (!text) continue;
+    if (input.dataset.field === "moving_time_s") {
+      const seconds = parseClock(text);
+      if (seconds === null) throw new Error("Time must be written as h:mm or h:mm:ss, e.g. 1:35");
+      manual.moving_time_s = seconds;
+    } else {
+      manual[input.dataset.field] = Number(text);
+    }
+  }
+  return manual;
+}
+
+for (const button of document.querySelectorAll("[data-reset]")) {
+  button.addEventListener("click", () => {
+    $(button.dataset.reset).value = "";
+  });
+}
+
+$("editor-cancel").addEventListener("click", () => $("editor").close());
+
+$("editor-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const showError = (text) => {
+    $("editor-error").textContent = text;
+    $("editor-error").hidden = false;
+  };
+  let manual;
+  try {
+    manual = editedManual();
+  } catch (e) {
+    showError(e.message);
+    return;
+  }
+  const response = await fetch(`/api/activities/${encodeURIComponent(editing.id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manual }),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    showError(result.error);
+    return;
+  }
+  activities = activities.map((a) => (a.id === result.id ? result : a));
+  $("editor").close();
+  render();
+});
+
+// ---- Controls ----
+
+function renderControls() {
+  const filter = $("type-filter");
+  filter.append(new Option("All activities", "all"));
+  for (const t of ACTIVITY_TYPES) filter.append(new Option(t.label, t.id));
+  for (const t of ACTIVITY_TYPES) {
+    const swatch = el("span", undefined, "swatch");
+    swatch.style.setProperty("--fill", `var(--type-${t.id})`);
+    const item = el("li");
+    item.append(swatch, t.label);
+    $("legend").append(item);
+  }
+  filter.addEventListener("change", render);
+  $("view").addEventListener("change", render);
+}
+
+// ---- Strava sync ----
+
+function counted(count, singular, plural) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function syncSummary(report) {
+  const parts = [];
+  if (report.added.length) parts.push(`added ${counted(report.added.length, "activity", "activities")}`);
+  if (report.updated.length) parts.push(`updated ${report.updated.length}`);
+  if (report.removed.length) parts.push(`removed ${report.removed.length} resort ski/snowboard`);
+  if (Object.keys(report.failed).length) parts.push(`${Object.keys(report.failed).length} failed`);
+  if (!parts.length) return "Up to date.";
+  const text = parts.join(", ") + ".";
+  return text[0].toUpperCase() + text.slice(1);
+}
+
+// What needs your attention after a sync, one line each; empty if nothing does.
+function syncProblems(report) {
+  const lines = [];
+  if (report.not_yet_added.length) {
+    lines.push(`Strava's rate limit was reached before ${counted(report.not_yet_added.length, "new activity", "new activities")}`
+      + " could be downloaded. Sync again in 15 minutes to add the rest.");
+  }
+  for (const [label, error] of Object.entries(report.failed)) lines.push(`Couldn't sync ${label}: ${error}`);
+  if (report.not_on_strava.length) {
+    lines.push(`No longer on Strava, but kept here: ${report.not_on_strava.join(", ")}.`);
+  }
+  return lines;
+}
+
+async function syncWithStrava() {
+  $("sync").disabled = true;
+  $("sync-status").textContent = "Syncing…";
+  try {
+    const response = await fetch("/api/strava/sync", { method: "POST" });
+    const result = await response.json();
+    if (response.status === 401 && result.authorize_url) {
+      $("sync-status").textContent = "Opening Strava to approve access…";
+      window.location.assign(result.authorize_url);
+      return;
+    }
+    if (!response.ok) {
+      $("sync-status").textContent = result.error;
+      return;
+    }
+    $("sync-status").textContent = syncSummary(result);
+    await loadActivities();
+    const problems = syncProblems(result);
+    if (problems.length) showMessage(problems.join("\n"), true);
+  } catch (e) {
+    $("sync-status").textContent = "Couldn't reach the server.";
+  } finally {
+    $("sync").disabled = false;
+  }
+}
+
+$("sync").addEventListener("click", syncWithStrava);
+
+// After approving access on Strava, the browser comes back here with ?sync=1 (or ?strava_error=…).
+function followStravaRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("sync") && !params.has("strava_error")) return;
+  history.replaceState(null, "", window.location.pathname);
+  if (params.has("strava_error")) {
+    $("sync-status").textContent = params.get("strava_error");
+  } else {
+    syncWithStrava();
+  }
+}
+
+function showMessage(text, isError) {
+  $("message").textContent = text;
+  $("message").className = "message" + (isError ? " error" : "");
+  $("message").hidden = false;
+}
+
+async function loadActivities() {
+  const response = await fetch("/api/activities");
+  if (!response.ok) {
+    showMessage("Couldn't load the training log.", true);
+    return;
+  }
+  activities = await response.json();
+  $("message").hidden = true;
+  if (!activities.length) {
+    showMessage("No activities yet. Sync with Strava, or first import your Strava account export with: " +
+                "uv run python -m trail_planner.import_strava_export <export zip>");
+  }
+  render();
+}
+
+renderControls();
+loadActivities();
+followStravaRedirect();
+</script>
+</body>
+</html>

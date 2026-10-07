@@ -1,0 +1,58 @@
+/* Styles shared by every page: color tokens, base typography and the tab bar. */
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --text: #1d1d1b;
+  --muted: #6b6b66;
+  --border: #deded8;
+  --accent: #2f6f4f;
+  --accent-text: #ffffff;
+  --warn: #9a5b00;
+  --page-width: 760px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161715;
+    --surface: #1f201e;
+    --text: #ecece8;
+    --muted: #9a9a93;
+    --border: #34352f;
+    --accent: #5fae84;
+    --accent-text: #0f1a14;
+    --warn: #e0a54a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: var(--page-width); margin: 0 auto; padding: 32px 16px 64px; }
+main > :first-child { margin-top: 0; }
+h2 { font-size: 1rem; margin: 32px 0 8px; color: var(--muted); font-weight: 600; }
+
+.tabs {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.tabs nav {
+  display: flex;
+  gap: 8px;
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: 0 16px;
+}
+.tabs a {
+  padding: 14px 12px 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-weight: 600;
+  text-decoration: none;
+}
+.tabs a:hover { color: var(--text); }
+.tabs a[aria-current="page"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}

@@ -1,0 +1,14 @@
+# Python and tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Strava API credentials and access tokens
+strava_app.json
+strava_tokens.json
+
+# Each person's own training data
+training_log.json
+activity_files/
+recorded_activities/
