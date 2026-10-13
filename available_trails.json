@@ -122,5 +122,37 @@
             "runnable_mi": 2.47
         },
         "manual": {}
+    },
+    "flagstaff_summit_tour": {
+        "from_gpx": {
+            "distance_mi": 4.3,
+            "vert_ft": 1014,
+            "runnable_mi": 1.97
+        },
+        "manual": {}
+    },
+    "mallory_cave_from_ncar": {
+        "from_gpx": {
+            "distance_mi": 3.23,
+            "vert_ft": 942,
+            "runnable_mi": 1.13
+        },
+        "manual": {}
+    },
+    "foothills_park_loop": {
+        "from_gpx": {
+            "distance_mi": 3.65,
+            "vert_ft": 864,
+            "runnable_mi": 2.08
+        },
+        "manual": {}
+    },
+    "red_rocks_and_dakota": {
+        "from_gpx": {
+            "distance_mi": 3.45,
+            "vert_ft": 923,
+            "runnable_mi": 1.36
+        },
+        "manual": {}
     }
 }

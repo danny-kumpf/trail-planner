@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from trail_planner import app as app_module
 from trail_planner.trails import load_trails
 from trail_planner.update_trails import update_trails
 
@@ -54,3 +55,16 @@ def test_keys_differing_only_by_case_rejected(tmp_path):
     trails_path.write_text(json.dumps({"Bear": {}, "bear": {}}))
     with pytest.raises(ValueError):
         update_trails(trails_path, tmp_path)
+
+
+def test_update_endpoint_runs_update_trails(workspace, monkeypatch):
+    trails_path, gpx_dir = workspace
+    monkeypatch.setitem(app_module.app.config, "TRAILS_PATH", trails_path)
+    monkeypatch.setitem(app_module.app.config, "GPX_DIR", gpx_dir)
+    client = app_module.app.test_client()
+
+    response = client.post("/api/trails/update")
+    assert response.status_code == 200
+    assert response.get_json() == {"updated": ["green_from_ncar"], "added": ["new_trail"]}
+    names = [t["name"] for t in client.get("/api/trails").get_json()["complete"]]
+    assert names == ["green_from_ncar", "new_trail"]

@@ -22,7 +22,8 @@ from trail_planner.planner import (
     PlanResult,
     shuffle_plan,
 )
-from trail_planner.trails import Trail, load_trails
+from trail_planner.trails import DEFAULT_GPX_DIR, DEFAULT_TRAILS_PATH, Trail, load_trails
+from trail_planner.update_trails import update_trails
 from trail_planner.strava_api import (
     DEFAULT_APP_PATH,
     DEFAULT_TOKENS_PATH,
@@ -51,6 +52,8 @@ from trail_planner.training_log import (
 )
 
 app = Flask(__name__)
+app.config["TRAILS_PATH"] = DEFAULT_TRAILS_PATH
+app.config["GPX_DIR"] = DEFAULT_GPX_DIR
 app.config["TRAINING_LOG_PATH"] = DEFAULT_LOG_PATH
 app.config["ACTIVITY_FILES_DIR"] = DEFAULT_ACTIVITY_FILES_DIR
 app.config["STRAVA_APP_PATH"] = DEFAULT_APP_PATH
@@ -60,6 +63,8 @@ rng = random.Random()
 log_lock = threading.Lock()
 # Held for a whole sync, so a second click while one runs is turned away rather than queued.
 sync_lock = threading.Lock()
+# Held for a whole trail update, so a second click while one runs is turned away rather than queued.
+update_trails_lock = threading.Lock()
 # The `state` of each approval sent to Strava and not yet returned, so the callback only accepts those.
 pending_oauth_states: set[str] = set()
 
@@ -134,11 +139,25 @@ def training_log():
 @app.get("/api/trails")
 def trails():
     # Reloaded on every request so re-running update_trails shows up without a restart.
-    catalog = load_trails()
+    catalog = load_trails(app.config["TRAILS_PATH"])
     return jsonify(
         complete=[trail_json(t) for t in catalog.complete],
         incomplete_names=catalog.incomplete_names,
     )
+
+
+@app.post("/api/trails/update")
+def trails_update():
+    """Recompute each trail's GPX stats and add entries for new GPX files, as update_trails does."""
+    if not update_trails_lock.acquire(blocking=False):
+        return jsonify(error="An update is already running."), 409
+    try:
+        report = update_trails(app.config["TRAILS_PATH"], app.config["GPX_DIR"])
+    except ValueError as e:
+        return jsonify(error=str(e)), 500
+    finally:
+        update_trails_lock.release()
+    return jsonify(asdict(report))
 
 
 @app.post("/api/plan")
@@ -155,7 +174,7 @@ def plan():
         )
     except (KeyError, TypeError, ValueError) as e:
         return jsonify(error=str(e)), 400
-    return jsonify(result_json(shuffle_plan(load_trails().complete, plan_request, rng)))
+    return jsonify(result_json(shuffle_plan(load_trails(app.config["TRAILS_PATH"]).complete, plan_request, rng)))
 
 
 @app.get("/api/activities")

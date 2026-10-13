@@ -27,7 +27,7 @@
   }
   .range { display: flex; gap: 6px; align-items: center; }
   .checkbox { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 8px; }
-  button {
+  form button {
     grid-column: 1 / -1;
     font: inherit;
     font-weight: 600;
@@ -52,6 +52,20 @@
   summary { font-weight: 600; color: var(--muted); cursor: pointer; }
   summary h2 { display: inline; margin: 0; }
   details[open] summary { margin-bottom: 8px; }
+  .update-button {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 6px;
+    padding: 2px 10px;
+    margin-left: 12px;
+    cursor: pointer;
+  }
+  .update-button:disabled { opacity: 0.6; cursor: progress; }
+  .update-status { margin-left: 8px; font-weight: normal; font-size: 0.85rem; }
 </style>
 </head>
 <body>
@@ -90,12 +104,18 @@
   <div id="result"></div>
 
   <details id="included-details">
-    <summary><h2>Included Trails</h2></summary>
+    <summary>
+      <h2>Included Trails</h2>
+      <button type="button" class="update-button" id="update-trails" title="Re-read the GPX files">⟳ Update</button>
+      <span class="update-status" id="update-status"></span>
+    </summary>
     <div id="included">Loading…</div>
   </details>
 
-  <h2>Excluded Trails (incomplete data)</h2>
-  <p class="excluded" id="excluded">Loading…</p>
+  <section id="excluded-section" hidden>
+    <h2>Excluded Trails (incomplete data)</h2>
+    <p class="excluded" id="excluded"></p>
+  </section>
 </main>
 
 <script>
@@ -195,10 +215,41 @@ $("plan-form").addEventListener("submit", async (event) => {
 async function loadCatalog() {
   const catalog = await (await fetch("/api/trails")).json();
   $("included").replaceChildren(catalog.complete.length ? trailsTable(catalog.complete) : el("p", "None", "excluded"));
-  $("excluded").textContent = catalog.incomplete_names.length
-    ? catalog.incomplete_names.map(prettyName).join(", ")
-    : "None";
+  $("excluded-section").hidden = !catalog.incomplete_names.length;
+  $("excluded").textContent = catalog.incomplete_names.map(prettyName).join(", ");
 }
+
+function counted(count, singular, plural) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function updateSummary(report) {
+  const text = `Updated ${counted(report.updated.length, "trail", "trails")}.`;
+  return report.added.length
+    ? `${text} Added ${report.added.map(prettyName).join(", ")}.`
+    : text;
+}
+
+async function updateTrails() {
+  $("update-trails").disabled = true;
+  $("update-status").textContent = "Updating…";
+  try {
+    const response = await fetch("/api/trails/update", { method: "POST" });
+    const result = await response.json();
+    $("update-status").textContent = response.ok ? updateSummary(result) : result.error;
+    if (response.ok) await loadCatalog();
+  } catch (e) {
+    $("update-status").textContent = "Couldn't reach the server.";
+  } finally {
+    $("update-trails").disabled = false;
+  }
+}
+
+$("update-trails").addEventListener("click", (event) => {
+  // The button sits in the <summary>; don't let the click also expand or collapse the list.
+  event.preventDefault();
+  updateTrails();
+});
 
 loadCatalog();
 // Reload when expanded, so trails processed since the page loaded show up.
