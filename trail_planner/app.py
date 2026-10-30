@@ -7,7 +7,7 @@ import random
 import secrets
 import threading
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import urlsplit
 
 from flask import Flask, jsonify, redirect, request, url_for
@@ -50,6 +50,14 @@ from trail_planner.training_log import (
     load_activities,
     set_manual,
 )
+from trail_planner.week_plans import (
+    DEFAULT_WEEK_PLANS_PATH,
+    WeekAlreadyPlanned,
+    WeekPlan,
+    load_week_plan,
+    planned_week_starts,
+    save_week_plan,
+)
 
 app = Flask(__name__)
 app.config["TRAILS_PATH"] = DEFAULT_TRAILS_PATH
@@ -58,6 +66,7 @@ app.config["TRAINING_LOG_PATH"] = DEFAULT_LOG_PATH
 app.config["ACTIVITY_FILES_DIR"] = DEFAULT_ACTIVITY_FILES_DIR
 app.config["STRAVA_APP_PATH"] = DEFAULT_APP_PATH
 app.config["STRAVA_TOKENS_PATH"] = DEFAULT_TOKENS_PATH
+app.config["WEEK_PLANS_PATH"] = DEFAULT_WEEK_PLANS_PATH
 rng = random.Random()
 # Held while the training log is read, changed and written, so a sync and an edit can't undo each other.
 log_lock = threading.Lock()
@@ -65,6 +74,8 @@ log_lock = threading.Lock()
 sync_lock = threading.Lock()
 # Held for a whole trail update, so a second click while one runs is turned away rather than queued.
 update_trails_lock = threading.Lock()
+# Held while saved week plans are read, changed and written, so two saves can't undo each other.
+week_plans_lock = threading.Lock()
 # The `state` of each approval sent to Strava and not yet returned, so the callback only accepts those.
 pending_oauth_states: set[str] = set()
 
@@ -160,21 +171,117 @@ def trails_update():
     return jsonify(asdict(report))
 
 
+def trail_names(value) -> frozenset[str]:
+    if not isinstance(value, list) or not all(isinstance(name, str) for name in value):
+        raise TypeError("trail names must be a list of strings")
+    return frozenset(value)
+
+
+def plan_request_from_json(body) -> PlanRequest:
+    """The plan request the page's settings describe. Raises KeyError, TypeError or ValueError if they're invalid."""
+    return PlanRequest(
+        target_vert_ft=float(body["target_vert_ft"]),
+        target_running_mi=float(body["target_running_mi"]),
+        min_outings=int(body["min_outings"]),
+        max_outings=int(body["max_outings"]),
+        vert_tolerance_frac=float(body["vert_tolerance_pct"]) / 100,
+        allow_repeats=bool(body["allow_repeats"]),
+        required_names=trail_names(body["required_trails"]),
+        excluded_names=trail_names(body["excluded_trails"]),
+    )
+
+
+def plan_request_json(plan_request: PlanRequest) -> dict:
+    """The page's settings for `plan_request`; the inverse of plan_request_from_json."""
+    return {
+        "target_vert_ft": plan_request.target_vert_ft,
+        "target_running_mi": plan_request.target_running_mi,
+        "min_outings": plan_request.min_outings,
+        "max_outings": plan_request.max_outings,
+        # Rounded so the percent typed in comes back as typed, e.g. 3 rather than 3.0000000000000004.
+        "vert_tolerance_pct": round(plan_request.vert_tolerance_frac * 100, 9),
+        "allow_repeats": plan_request.allow_repeats,
+        "required_trails": sorted(plan_request.required_names),
+        "excluded_trails": sorted(plan_request.excluded_names),
+    }
+
+
 @app.post("/api/plan")
 def plan():
     body = request.get_json()
     try:
-        plan_request = PlanRequest(
-            target_vert_ft=float(body["target_vert_ft"]),
-            target_running_mi=float(body["target_running_mi"]),
-            min_outings=int(body["min_outings"]),
-            max_outings=int(body["max_outings"]),
-            vert_tolerance_frac=float(body["vert_tolerance_pct"]) / 100,
-            allow_repeats=bool(body["allow_repeats"]),
-        )
+        plan_request = plan_request_from_json(body)
+        result = shuffle_plan(load_trails(app.config["TRAILS_PATH"]).complete, plan_request, rng)
     except (KeyError, TypeError, ValueError) as e:
         return jsonify(error=str(e)), 400
-    return jsonify(result_json(shuffle_plan(load_trails(app.config["TRAILS_PATH"]).complete, plan_request, rng)))
+    return jsonify(result_json(result))
+
+
+def week_plan_json(week_plan: WeekPlan) -> dict:
+    return {
+        "week_start": week_plan.week_start.isoformat(),
+        "request": plan_request_json(week_plan.request),
+        "plan": plan_json(week_plan.plan),
+    }
+
+
+@app.get("/api/week-plans")
+def week_plans():
+    """The first day of each week with a saved plan."""
+    return jsonify([week_start.isoformat() for week_start in planned_week_starts(app.config["WEEK_PLANS_PATH"])])
+
+
+def week_start_or_none(text: str) -> date | None:
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+@app.get("/api/week-plans/<week_start>")
+def week_plan(week_start: str):
+    start = week_start_or_none(week_start)
+    if start is None:
+        return jsonify(error=f"{week_start!r} isn't a date"), 400
+    saved = load_week_plan(start, app.config["WEEK_PLANS_PATH"])
+    if saved is None:
+        return jsonify(error=f"no plan saved for the week of {week_start}"), 404
+    return jsonify(week_plan_json(saved))
+
+
+def plan_of_trail_names(names, catalog: list[Trail], target_vert_ft: float) -> Plan:
+    """The plan made of the named trails, in order, as they are in `catalog`. Raises TypeError or
+    ValueError if `names` isn't a list of plannable trails."""
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        raise TypeError("trail names must be a list of strings")
+    by_name = {t.name: t for t in catalog}
+    if unknown := sorted(set(names) - set(by_name)):
+        raise ValueError(f"Trails aren't in the catalog: {', '.join(unknown)}")
+    return Plan(tuple(by_name[name] for name in names), target_vert_ft)
+
+
+@app.put("/api/week-plans/<week_start>")
+def save_week(week_start: str):
+    """Save a plan for the week starting on `week_start`, given the settings it was shuffled with
+    (`request`) and its `trail_names`. If the week already has a plan, responds 409 unless
+    `replace_existing` is true."""
+    start = week_start_or_none(week_start)
+    if start is None:
+        return jsonify(error=f"{week_start!r} isn't a date"), 400
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="body must be an object"), 400
+    try:
+        plan_request = plan_request_from_json(body["request"])
+        catalog = load_trails(app.config["TRAILS_PATH"]).complete
+        saved = WeekPlan(start, plan_request, plan_of_trail_names(body["trail_names"], catalog, plan_request.target_vert_ft))
+        with week_plans_lock:
+            save_week_plan(saved, bool(body.get("replace_existing", False)), app.config["WEEK_PLANS_PATH"])
+    except WeekAlreadyPlanned:
+        return jsonify(error=f"a plan is already saved for the week of {week_start}"), 409
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(week_plan_json(saved))
 
 
 @app.get("/api/activities")

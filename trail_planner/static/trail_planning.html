@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trail Planning</title>
 <link rel="stylesheet" href="/static/site.css">
+<script src="/static/calendar.js"></script>
 <style>
   form {
     display: grid;
@@ -47,6 +48,21 @@
   tfoot td { font-weight: 600; border-bottom: none; }
   .summary { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 12px; color: var(--muted); }
   .summary strong { color: var(--text); }
+  .save-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 16px; }
+  .save-button {
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 8px;
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+  .save-button:disabled { opacity: 0.6; cursor: progress; }
+  .save-status { color: var(--muted); font-size: 0.9rem; }
+  .save-status.warn { color: var(--warn); }
   .excluded { color: var(--muted); font-size: 0.9rem; }
   details { margin-top: 32px; }
   summary { font-weight: 600; color: var(--muted); cursor: pointer; }
@@ -66,6 +82,39 @@
   }
   .update-button:disabled { opacity: 0.6; cursor: progress; }
   .update-status { margin-left: 8px; font-weight: normal; font-size: 0.85rem; }
+  .choice-summary { margin-left: 8px; font-weight: normal; font-size: 0.85rem; }
+  th.choice-cell, td.choice-cell { text-align: center; width: 4.5rem; }
+  /* Drawn by hand so Require can show a check and Exclude an X. */
+  input.choice {
+    appearance: none;
+    display: inline-grid;
+    place-content: center;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    vertical-align: middle;
+    border: 1.5px solid var(--muted);
+    border-radius: 4px;
+    background: var(--bg);
+    cursor: pointer;
+  }
+  input.choice::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    background: var(--accent-text);
+    transform: scale(0);
+  }
+  input.choice:checked::before { transform: scale(1); }
+  input.choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input.choice-require:checked { background: var(--accent); border-color: var(--accent); }
+  input.choice-require::before { clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%); }
+  input.choice-exclude:checked { background: var(--warn); border-color: var(--warn); }
+  input.choice-exclude::before {
+    clip-path: polygon(20% 0, 0 20%, 30% 50%, 0 80%, 20% 100%, 50% 70%, 80% 100%, 100% 80%, 70% 50%, 100% 20%, 80% 0, 50% 30%);
+  }
+  tr.ruled-out td { color: var(--muted); }
+  tr.ruled-out td:first-child { text-decoration: line-through; }
 </style>
 </head>
 <body>
@@ -76,7 +125,7 @@
   </nav>
 </header>
 <main>
-  <h2>Plan</h2>
+  <h2 id="plan-heading">Plan</h2>
 
   <form id="plan-form">
     <label>Target vert (ft)
@@ -106,6 +155,7 @@
   <details id="included-details">
     <summary>
       <h2>Included Trails</h2>
+      <span class="choice-summary" id="choice-summary"></span>
       <button type="button" class="update-button" id="update-trails" title="Re-read the GPX files">⟳ Update</button>
       <span class="update-status" id="update-status"></span>
     </summary>
@@ -132,16 +182,72 @@ function el(tag, text, className) {
   return node;
 }
 
-function trailsTable(trails) {
+// Each extra column is {header, className, cell: (trail) => <td>}, added after the stats.
+function trailsTable(trails, extraColumns = []) {
   const table = el("table");
   const head = table.createTHead().insertRow();
   for (const h of ["Trail", "Vert", "Distance", "Runnable"]) head.append(el("th", h));
+  for (const column of extraColumns) head.append(el("th", column.header, column.className));
   const body = table.createTBody();
   for (const t of trails) {
     const row = body.insertRow();
     row.append(el("td", prettyName(t.name)), el("td", fmtFt(t.vert_ft)),
-               el("td", fmtMi(t.distance_mi)), el("td", fmtMi(t.runnable_mi)));
+               el("td", fmtMi(t.distance_mi)), el("td", fmtMi(t.runnable_mi)),
+               ...extraColumns.map((column) => column.cell(t)));
   }
+  return table;
+}
+
+// What the user chose for each trail they've required or excluded, by trail name. Trails absent
+// here are neither; kept across reloads of the catalog, which redraw the table.
+const Choice = { require: "require", exclude: "exclude" };
+const trailChoices = new Map();
+
+function namesWithChoice(choice) {
+  return [...trailChoices].filter(([, c]) => c === choice).map(([name]) => name);
+}
+
+function renderChoiceSummary() {
+  const parts = [];
+  const numRequired = namesWithChoice(Choice.require).length;
+  const numExcluded = namesWithChoice(Choice.exclude).length;
+  if (numRequired) parts.push(`${numRequired} required`);
+  if (numExcluded) parts.push(`${numExcluded} excluded`);
+  $("choice-summary").textContent = parts.join(" · ");
+}
+
+function showChoice(row, name) {
+  for (const box of row.querySelectorAll("input.choice")) box.checked = trailChoices.get(name) === box.dataset.choice;
+  row.classList.toggle("ruled-out", trailChoices.get(name) === Choice.exclude);
+}
+
+function choiceColumn(header, choice) {
+  return {
+    header,
+    className: "choice-cell",
+    cell(trail) {
+      const box = el("input", undefined, `choice choice-${choice}`);
+      box.type = "checkbox";
+      box.dataset.choice = choice;
+      box.setAttribute("aria-label", `${header} ${prettyName(trail.name)}`);
+      box.addEventListener("change", () => {
+        // Checking one box replaces the row's other choice; unchecking leaves the trail unconstrained.
+        if (box.checked) trailChoices.set(trail.name, choice);
+        else trailChoices.delete(trail.name);
+        showChoice(box.closest("tr"), trail.name);
+        renderChoiceSummary();
+        rememberSettings();
+      });
+      const td = el("td", undefined, "choice-cell");
+      td.append(box);
+      return td;
+    },
+  };
+}
+
+function includedTable(trails) {
+  const table = trailsTable(trails, [choiceColumn("Require", Choice.require), choiceColumn("Exclude", Choice.exclude)]);
+  trails.forEach((t, i) => showChoice(table.tBodies[0].rows[i], t.name));
   return table;
 }
 
@@ -166,55 +272,189 @@ function planSummary(plan, targetRunningMi) {
   return summary;
 }
 
-function renderResult(result, targetRunningMi) {
+// A plan shuffled with `settings`, which are saved along with it.
+function shuffledPlan(plan, settings) {
+  return [planTable(plan), planSummary(plan, settings.target_running_mi), saveRow(plan, settings)];
+}
+
+// `settings` is the request body the result was shuffled with.
+function renderResult(result, settings) {
   const out = $("result");
   out.replaceChildren();
   switch (result.status) {
     case "found":
-      out.append(planTable(result.plan), planSummary(result.plan, targetRunningMi));
+      out.append(...shuffledPlan(result.plan, settings));
       break;
     case "no_plan_in_tolerance":
       out.append(el("p", "No plan lands within the vert tolerance. " +
                     `Recommended tolerance: ${(result.recommended_tolerance_frac * 100).toFixed(1)}% ` +
                     `(${result.num_plans_at_recommended} option${result.num_plans_at_recommended === 1 ? "" : "s"}). ` +
                     "Closest plan with enough runnable miles:", "status warn"),
-                 planTable(result.closest), planSummary(result.closest, targetRunningMi));
+                 ...shuffledPlan(result.closest, settings));
       break;
     case "not_enough_runnable":
       out.append(el("p", `Not enough runnable miles: the most any plan in this outing range offers is ${fmtMi(result.max_runnable_mi)}.`, "status warn"));
       break;
     case "no_combinations":
-      out.append(el("p", "Too few trails with complete data to fill any outing count in this range.", "status warn"));
+      out.append(el("p", "Too few non-excluded trails with complete data to fill any outing count in this range.", "status warn"));
       break;
   }
 }
 
+// The settings on the page, as the request body for a shuffle.
+function formSettings() {
+  return {
+    target_vert_ft: Number($("target-vert-ft").value),
+    target_running_mi: Number($("target-running-mi").value),
+    min_outings: Number($("min-outings").value),
+    max_outings: Number($("max-outings").value),
+    vert_tolerance_pct: Number($("vert-tolerance-pct").value),
+    allow_repeats: $("allow-repeats").checked,
+    required_trails: namesWithChoice(Choice.require),
+    excluded_trails: namesWithChoice(Choice.exclude),
+  };
+}
+
+// Put the page's settings back as `settings` describes them; the inverse of formSettings.
+function applySettings(settings) {
+  $("target-vert-ft").value = settings.target_vert_ft;
+  $("target-running-mi").value = settings.target_running_mi;
+  $("min-outings").value = settings.min_outings;
+  $("max-outings").value = settings.max_outings;
+  $("vert-tolerance-pct").value = settings.vert_tolerance_pct;
+  $("allow-repeats").checked = settings.allow_repeats;
+  trailChoices.clear();
+  for (const name of settings.required_trails) trailChoices.set(name, Choice.require);
+  for (const name of settings.excluded_trails) trailChoices.set(name, Choice.exclude);
+}
+
 $("plan-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const targetRunningMi = Number($("target-running-mi").value);
+  const settings = formSettings();
   const response = await fetch("/api/plan", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      target_vert_ft: Number($("target-vert-ft").value),
-      target_running_mi: targetRunningMi,
-      min_outings: Number($("min-outings").value),
-      max_outings: Number($("max-outings").value),
-      vert_tolerance_pct: Number($("vert-tolerance-pct").value),
-      allow_repeats: $("allow-repeats").checked,
-    }),
+    body: JSON.stringify(settings),
   });
   const result = await response.json();
   if (!response.ok) {
     $("result").replaceChildren(el("p", result.error, "status warn"));
     return;
   }
-  renderResult(result, targetRunningMi);
+  renderResult(result, settings);
 });
+
+// ---- The week being planned ----
+// The one whose first day is in the URL's ?week=YYYY-MM-DD, as the Training Log links to it;
+// otherwise the current week, starting on the weekday chosen on the Training Log.
+const week = (() => {
+  const param = new URLSearchParams(window.location.search).get("week");
+  const firstDay = param && /^\d{4}-\d{2}-\d{2}$/.test(param)
+    ? dayOfIsoDate(param)
+    : firstDayOfWeek(today, loadWeekStartWeekday());
+  return { firstDay, lastDay: firstDay + 6 };
+})();
+const weekUrl = `/api/week-plans/${isoDateOfDay(week.firstDay)}`;
+const weekRange = fmtDayRange(week.firstDay, week.lastDay);
+const weekPhrase = week.firstDay <= today && today <= week.lastDay ? `this week (${weekRange})` : `the week of ${weekRange}`;
+
+function saveRow(plan, settings) {
+  const row = el("div", undefined, "save-row");
+  const button = el("button", `Save plan for ${weekPhrase}`, "save-button");
+  button.type = "button";
+  const status = el("span", undefined, "save-status");
+  button.addEventListener("click", () => savePlan(plan, settings, button, status));
+  row.append(button, status);
+  return row;
+}
+
+async function savePlan(plan, settings, button, status) {
+  const put = (replaceExisting) => fetch(weekUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request: settings, trail_names: plan.trails.map((t) => t.name), replace_existing: replaceExisting }),
+  });
+  const showStatus = (text, isWarning) => {
+    status.textContent = text;
+    status.className = "save-status" + (isWarning ? " warn" : "");
+  };
+  button.disabled = true;
+  try {
+    let response = await put(false);
+    if (response.status === 409) {
+      if (!confirm(`A plan is already saved for ${weekPhrase}. Overwrite it?`)) return;
+      response = await put(true);
+    }
+    if (!response.ok) {
+      showStatus((await response.json()).error, true);
+      return;
+    }
+    button.remove();
+    showStatus(`Saved for ${weekPhrase}.`, false);
+  } catch (e) {
+    showStatus("Couldn't reach the server.", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// ---- Settings remembered across tabs ----
+// What you've set for the week, kept for this browser tab so it survives going to the Training Log
+// and back. Kept per week, so opening another week's saved plan doesn't bring this week's settings.
+const settingsStorageKey = `trailPlanningSettings:${isoDateOfDay(week.firstDay)}`;
+
+function rememberSettings() {
+  try {
+    sessionStorage.setItem(settingsStorageKey, JSON.stringify(formSettings()));
+  } catch {
+    // Storage unavailable: the settings still hold until you leave the page.
+  }
+}
+
+// What rememberSettings last kept for the week, or null if nothing was.
+function rememberedSettings() {
+  try {
+    const stored = sessionStorage.getItem(settingsStorageKey);
+    return stored === null ? null : JSON.parse(stored);
+  } catch {
+    return null;
+  }
+}
+
+$("plan-form").addEventListener("input", rememberSettings);
+
+// ---- Restoring the page ----
+
+// The week's saved plan, or null if it has none or it couldn't be loaded.
+async function loadSavedPlan() {
+  const response = await fetch(weekUrl);
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    $("result").replaceChildren(el("p", `Couldn't load the plan saved for ${weekPhrase}.`, "status warn"));
+    return null;
+  }
+  return response.json();
+}
+
+// Show the week's saved plan, if it has one, and put the settings back: the ones you last set for
+// the week, else the ones its saved plan was shuffled with, else the defaults.
+async function restorePage() {
+  const saved = await loadSavedPlan();
+  if (saved) {
+    $("result").replaceChildren(el("p", `Saved plan for ${weekPhrase}:`, "status"),
+                                planTable(saved.plan), planSummary(saved.plan, saved.request.target_running_mi));
+  }
+  const settings = rememberedSettings() ?? saved?.request;
+  if (settings) applySettings(settings);
+}
 
 async function loadCatalog() {
   const catalog = await (await fetch("/api/trails")).json();
-  $("included").replaceChildren(catalog.complete.length ? trailsTable(catalog.complete) : el("p", "None", "excluded"));
+  // Forget choices for trails that are no longer plannable, so they aren't sent with the next shuffle.
+  const plannableNames = new Set(catalog.complete.map((t) => t.name));
+  for (const name of trailChoices.keys()) if (!plannableNames.has(name)) trailChoices.delete(name);
+  renderChoiceSummary();
+  $("included").replaceChildren(catalog.complete.length ? includedTable(catalog.complete) : el("p", "None", "excluded"));
   $("excluded-section").hidden = !catalog.incomplete_names.length;
   $("excluded").textContent = catalog.incomplete_names.map(prettyName).join(", ");
 }
@@ -251,7 +491,9 @@ $("update-trails").addEventListener("click", (event) => {
   updateTrails();
 });
 
-loadCatalog();
+$("plan-heading").textContent = `Plan for ${weekPhrase}`;
+// Settings first, so their trail choices are in place when the catalog's table is drawn.
+restorePage().finally(loadCatalog);
 // Reload when expanded, so trails processed since the page loaded show up.
 $("included-details").addEventListener("toggle", (event) => {
   if (event.target.open) loadCatalog();

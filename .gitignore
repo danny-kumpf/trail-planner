@@ -10,5 +10,6 @@ strava_tokens.json
 
 # Each person's own training data
 training_log.json
+week_plans.json
 activity_files/
 recorded_activities/

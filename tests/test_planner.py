@@ -6,6 +6,7 @@ from trail_planner.planner import (
     NoCombinations,
     NoPlanInTolerance,
     NotEnoughRunnable,
+    Plan,
     PlanFound,
     PlanRequest,
     shuffle_plan,
@@ -118,10 +119,60 @@ def test_no_combinations():
     assert isinstance(result, NoCombinations)
 
 
+def plan_names(plan: Plan) -> tuple[str, ...]:
+    return tuple(sorted(t.name for t in plan.trails))
+
+
+def test_required_trail_is_in_every_plan():
+    # Within 10% of 4000 ft: {b,c}, {a,b,d}, {c,d}; only the first two include b.
+    req = request(vert_tolerance_frac=0.10, required_names=frozenset({"b"}))
+    seen = {plan_names(shuffle_plan(TRAILS, req, random.Random(seed)).plan) for seed in range(200)}
+    assert seen == {("b", "c"), ("a", "b", "d")}
+
+
+def test_excluded_trail_is_in_no_plan():
+    req = request(vert_tolerance_frac=0.10, excluded_names=frozenset({"b"}))
+    seen = {plan_names(shuffle_plan(TRAILS, req, random.Random(seed)).plan) for seed in range(200)}
+    assert seen == {("c", "d")}
+
+
+def test_required_trail_can_repeat_when_repeats_allowed():
+    trails = [Trail("x", 1, vert_ft=1000, runnable_mi=0), Trail("y", 1, vert_ft=2000, runnable_mi=0)]
+    req = request(target_vert_ft=3000, max_outings=3, vert_tolerance_frac=0.0, allow_repeats=True,
+                  required_names=frozenset({"x"}))
+    seen = {plan_names(shuffle_plan(trails, req, random.Random(seed)).plan) for seed in range(200)}
+    assert seen == {("x", "y"), ("x", "x", "x")}
+
+
+def test_required_trail_isnt_repeated_without_repeats():
+    trails = [Trail("x", 1, vert_ft=1000, runnable_mi=0)]
+    req = request(target_vert_ft=2000, required_names=frozenset({"x"}))
+    assert isinstance(shuffle_plan(trails, req, random.Random(0)), NoPlanInTolerance)
+
+
+def test_closest_plan_respects_required_and_excluded():
+    req = request(target_vert_ft=10000, required_names=frozenset({"a"}), excluded_names=frozenset({"c"}))
+    result = shuffle_plan(TRAILS, req, random.Random(0))
+    assert isinstance(result, NoPlanInTolerance)
+    assert plan_names(result.closest) == ("a", "b", "d")
+
+
+def test_excluding_too_many_leaves_no_combinations():
+    req = request(min_outings=3, max_outings=4, excluded_names=frozenset({"a", "b"}))
+    assert isinstance(shuffle_plan(TRAILS, req, random.Random(0)), NoCombinations)
+
+
+def test_unknown_required_trail_rejected():
+    with pytest.raises(ValueError):
+        shuffle_plan(TRAILS, request(required_names=frozenset({"nope"})), random.Random(0))
+
+
 @pytest.mark.parametrize(
     "overrides",
     [dict(target_vert_ft=0), dict(target_running_mi=-1), dict(min_outings=0), dict(min_outings=3, max_outings=2),
-     dict(vert_tolerance_frac=-0.01)],
+     dict(vert_tolerance_frac=-0.01),
+     dict(required_names=frozenset({"a"}), excluded_names=frozenset({"a"})),
+     dict(max_outings=1, required_names=frozenset({"a", "b"}))],
 )
 def test_invalid_requests_rejected(overrides):
     with pytest.raises(ValueError):

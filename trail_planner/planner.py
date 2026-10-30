@@ -3,6 +3,8 @@
 Shuffling rolls the number of outings first, so every count in the allowed range is equally
 likely regardless of how many combinations each count has, then picks uniformly at random
 among that count's acceptable plans.
+
+Every plan includes each required trail, and no plan includes an excluded one.
 """
 
 import itertools
@@ -26,6 +28,8 @@ class PlanRequest:
     max_outings: int
     vert_tolerance_frac: float
     allow_repeats: bool
+    required_names: frozenset[str] = frozenset()
+    excluded_names: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.target_vert_ft <= 0:
@@ -36,6 +40,10 @@ class PlanRequest:
             raise ValueError("Outings range must satisfy 1 <= min <= max")
         if self.vert_tolerance_frac < 0:
             raise ValueError("Vert tolerance can't be negative")
+        if both := self.required_names & self.excluded_names:
+            raise ValueError(f"Trails can't be both required and excluded: {', '.join(sorted(both))}")
+        if len(self.required_names) > self.max_outings:
+            raise ValueError(f"{len(self.required_names)} required trails don't fit in {self.max_outings} outings")
 
 
 @dataclass(frozen=True)
@@ -89,16 +97,43 @@ class NotEnoughRunnable:
 
 @dataclass(frozen=True)
 class NoCombinations:
-    """There are too few trails to fill any outing count in the range."""
+    """There are too few non-excluded trails to fill any outing count in the range."""
 
 
 PlanResult = PlanFound | NoPlanInTolerance | NotEnoughRunnable | NoCombinations
 
 
-def plans_with_outings(trails: list[Trail], num_outings: int, request: PlanRequest) -> Iterator[Plan]:
+@dataclass(frozen=True)
+class TrailChoices:
+    """The trails every plan includes, and the trails its remaining outings are chosen from."""
+
+    required: tuple[Trail, ...]
+    choosable: list[Trail]
+
+
+def trail_choices(trails: list[Trail], request: PlanRequest) -> TrailChoices:
+    unknown_names = request.required_names - {t.name for t in trails}
+    if unknown_names:
+        raise ValueError(f"Required trails aren't in the catalog: {', '.join(sorted(unknown_names))}")
+    # Without repeats, a required trail already fills its one outing, so it isn't chosen again.
+    return TrailChoices(
+        required=tuple(t for t in trails if t.name in request.required_names),
+        choosable=[
+            t
+            for t in trails
+            if t.name not in request.excluded_names
+            and (request.allow_repeats or t.name not in request.required_names)
+        ],
+    )
+
+
+def plans_with_outings(choices: TrailChoices, num_outings: int, request: PlanRequest) -> Iterator[Plan]:
+    num_chosen = num_outings - len(choices.required)
+    if num_chosen < 0:  # Too few outings to fit every required trail.
+        return
     choose = itertools.combinations_with_replacement if request.allow_repeats else itertools.combinations
-    for combo in choose(trails, num_outings):
-        yield Plan(combo, request.target_vert_ft)
+    for combo in choose(choices.choosable, num_chosen):
+        yield Plan(choices.required + combo, request.target_vert_ft)
 
 
 def has_enough_runnable(plan: Plan, request: PlanRequest) -> bool:
@@ -110,20 +145,22 @@ def is_acceptable(plan: Plan, request: PlanRequest) -> bool:
 
 
 def shuffle_plan(trails: list[Trail], request: PlanRequest, rng: random.Random) -> PlanResult:
+    """Raises ValueError if a required trail isn't among `trails`."""
+    choices = trail_choices(trails, request)
     outing_counts = list(range(request.min_outings, request.max_outings + 1))
     rng.shuffle(outing_counts)
     for num_outings in outing_counts:
-        acceptable = [p for p in plans_with_outings(trails, num_outings, request) if is_acceptable(p, request)]
+        acceptable = [p for p in plans_with_outings(choices, num_outings, request) if is_acceptable(p, request)]
         if acceptable:
             return PlanFound(rng.choice(acceptable))
-    return explain_no_plan(trails, request)
+    return explain_no_plan(choices, request)
 
 
-def explain_no_plan(trails: list[Trail], request: PlanRequest) -> PlanResult:
+def explain_no_plan(choices: TrailChoices, request: PlanRequest) -> PlanResult:
     all_plans = [
         plan
         for num_outings in range(request.min_outings, request.max_outings + 1)
-        for plan in plans_with_outings(trails, num_outings, request)
+        for plan in plans_with_outings(choices, num_outings, request)
     ]
     if not all_plans:
         return NoCombinations()

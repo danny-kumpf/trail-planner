@@ -47,7 +47,13 @@ uv sync
 uv run python -m trail_planner.app
 ```
 
-Open http://localhost:5000. The site has two tabs at the top: **Trail Planning** (described here) and **Training Log** (see [Training log](#training-log)). On Trail Planning, enter your targets, set the outings range (default 1–6), the tolerance, and whether a trail may repeat within the week. Then click **Shuffle** until you get a plan you like. Below the plan, **Included Trails** expands to a table of every plannable trail with its vert, distance and runnable miles. Under that, **Excluded Trails** lists the ones that don't have all three yet.
+Open http://localhost:5000. The site has two tabs at the top: **Trail Planning** (described here) and **Training Log** (see [Training log](#training-log)). On Trail Planning, enter your targets, set the outings range (default 1–6), the tolerance, and whether a trail may repeat within the week. Then click **Shuffle** until you get a plan you like. Below the plan, **Included Trails** expands to a table of every plannable trail with its vert, distance and runnable miles. Its **Require** and **Exclude** checkboxes put a trail in every plan (say, one you want to run this week) or keep it out of all of them (one you just ran); by default neither is checked. Your settings and these choices are kept for each week while the browser tab is open, so going to the Training Log and back doesn't reset them. Under that, **Excluded Trails** lists the ones that don't have all three yet.
+
+### Save a plan for the week
+
+Under a plan, **Save plan for this week** keeps it in `week_plans.json` with the settings it was shuffled with, including the required and excluded trails. Coming back to the tab (after a restart, say) shows the week's saved plan and puts those settings back, unless you've changed them since in the same browser tab. If the week already has a saved plan, you're asked before it's overwritten. Each saved trail keeps the stats it had when saved, so updating trails later doesn't change a saved plan.
+
+The planning tab plans the current week, starting on the day weeks start on in the Training Log. On the Training Log's weekly view, the current week has a **Plan week** button, or **See plan** once it has one. Any earlier week with a saved plan has **See plan** too, which opens the planning tab for that week. Plans are filed under the week's first day, so after changing the day weeks start on, plans saved before don't line up with the new weeks and don't show.
 
 ### Add or update trails
 
@@ -187,6 +193,8 @@ uv run pytest
 | `trail_planner/update_trails.py` | Script that writes GPX stats into the catalog |
 | `trail_planner/trails.py` | Loads the catalog, applying manual overrides |
 | `trail_planner/planner.py` | Shuffle algorithm |
+| `week_plans.json` | Plans saved for each week, with the settings they were shuffled with |
+| `trail_planner/week_plans.py` | Saves and loads the plans for each week |
 | `trail_planner/effort.py` | Recording → running and hiking miles (by cadence, or by pace alone), heart rate |
 | `training_log.json` | Training log: Strava's summary, our numbers and your edits for every activity |
 | `activity_files/` | Each activity's recording (FIT or GPX from the export, or streams from a sync), named by Strava activity id |
@@ -201,6 +209,7 @@ uv run pytest
 | `trail_planner/json_store.py` | Reading and writing the JSON data files |
 | `trail_planner/app.py` | Flask server for the pages and API |
 | `trail_planner/static/site.css` | Styles shared by both tabs, including the tab bar |
+| `trail_planner/static/calendar.js` | Calendar days and weeks, and the week start day, shared by both tabs |
 | `trail_planner/static/trail_planning.html` | The Trail Planning tab |
 | `trail_planner/static/training_log.html` | The Training Log tab |
 | `tests/` | Unit tests |

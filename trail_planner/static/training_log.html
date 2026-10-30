@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Training Log</title>
 <link rel="stylesheet" href="/static/site.css">
+<script src="/static/calendar.js"></script>
 <style>
   :root {
     --page-width: 1280px;
@@ -93,6 +94,18 @@
   .totals { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
   .totals dt { color: var(--muted); }
   .totals dd { margin: 0; font-weight: 600; }
+  .plan-link {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-text);
+    background: var(--accent);
+    border-radius: 6px;
+    padding: 3px 10px;
+    text-decoration: none;
+  }
+  .plan-link:hover { filter: brightness(1.1); }
 
   .cell { padding: 16px 4px; display: flex; flex-direction: column; align-items: center; gap: 14px; min-height: 110px; }
   .cell-range { font-size: 0.75rem; color: var(--muted); align-self: stretch; text-align: center; margin-bottom: -6px; }
@@ -299,30 +312,11 @@ const ACTIVITY_TYPES = [
 const typeLabel = (typeId) => ACTIVITY_TYPES.find((t) => t.id === typeId).label;
 const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const WEEKDAY_FULL_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_FULL_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August",
                           "September", "October", "November", "December"];
-const SATURDAY = 6;
 
-// ---- Calendar days ----
-// A day is a whole number counted from 1970-01-01. Dates are plain calendar dates with no time
-// zone, so stepping by days is integer arithmetic and never trips over daylight saving.
-const MS_PER_DAY = 86_400_000;
-const dayFromDate = (year, month, date) => Date.UTC(year, month - 1, date) / MS_PER_DAY;  // month is 1–12
-const dateOfDay = (day) => {
-  const d = new Date(day * MS_PER_DAY);
-  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, date: d.getUTCDate() };
-};
-const weekdayOfDay = (day) => new Date(day * MS_PER_DAY).getUTCDay();  // 0 is Sunday
 // The local calendar date an activity started on, read from its wall-clock start time.
-const dayOfLocalStart = (iso) => dayFromDate(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)), Number(iso.slice(8, 10)));
-const today = (() => {
-  const now = new Date();
-  return dayFromDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
-})();
-const firstDayOfWeek = (day, weekStartWeekday) => day - ((weekdayOfDay(day) - weekStartWeekday + 7) % 7);
-const firstDayOfMonth = (year, month) => dayFromDate(year, month, 1);
-const lastDayOfMonth = (year, month) => dayFromDate(year, month + 1, 1) - 1;
+const dayOfLocalStart = (iso) => dayOfIsoDate(iso.slice(0, 10));
 
 // ---- Formatting ----
 const fmtFt = (ft) => Math.round(ft).toLocaleString() + " ft";
@@ -336,18 +330,6 @@ const fmtDuration = (s) => {
   const h = Math.floor(totalMin / 60);
   return h ? `${h}h ${totalMin % 60}m` : `${totalMin}m`;
 };
-function fmtDayRange(firstDay, lastDay) {
-  const first = dateOfDay(firstDay);
-  const last = dateOfDay(lastDay);
-  const thisYear = dateOfDay(today).year;
-  const withYear = (d, text) => (d.year === thisYear ? text : `${text}, ${d.year}`);
-  if (first.year !== last.year) {
-    return `${withYear(first, `${MONTH_NAMES[first.month - 1]} ${first.date}`)} – ` +
-           withYear(last, `${MONTH_NAMES[last.month - 1]} ${last.date}`);
-  }
-  const lastText = first.month === last.month ? `${last.date}` : `${MONTH_NAMES[last.month - 1]} ${last.date}`;
-  return withYear(last, `${MONTH_NAMES[first.month - 1]} ${first.date} – ${lastText}`);
-}
 // Same as fmtDayRange, without the year and with a tight dash, for the small labels in monthly cells.
 function fmtShortDayRange(firstDay, lastDay) {
   const first = dateOfDay(firstDay);
@@ -357,27 +339,10 @@ function fmtShortDayRange(firstDay, lastDay) {
 }
 
 // ---- State ----
-const WEEK_START_STORAGE_KEY = "trainingLogWeekStartWeekday";
-
-function loadWeekStartWeekday() {
-  try {
-    const stored = localStorage.getItem(WEEK_START_STORAGE_KEY);
-    return stored === null ? SATURDAY : Number(stored);
-  } catch {
-    return SATURDAY;
-  }
-}
-
-function saveWeekStartWeekday(weekday) {
-  try {
-    localStorage.setItem(WEEK_START_STORAGE_KEY, String(weekday));
-  } catch {
-    // Storage unavailable: the choice still holds until the page is reloaded.
-  }
-}
-
 let activities = [];
 let weekStartWeekday = loadWeekStartWeekday();
+// The first day of each week with a saved plan.
+let plannedWeekStarts = new Set();
 
 // ---- Periods ----
 // A period is one row: a span of days, split into the columns shown for it.
@@ -568,7 +533,17 @@ function headingRow(view) {
   return row;
 }
 
-function periodLabel(period, periodActivities) {
+// A link to the week's saved plan, or to plan the current week if it has none; null for other weeks.
+function weekPlanLink(period) {
+  const isPlanned = plannedWeekStarts.has(period.firstDay);
+  const isCurrent = period.firstDay <= today && today <= period.lastDay;
+  if (!isPlanned && !isCurrent) return null;
+  const link = el("a", isPlanned ? "See plan" : "Plan week", "plan-link");
+  link.href = planningUrlForWeek(period.firstDay);
+  return link;
+}
+
+function periodLabel(view, period, periodActivities) {
   const label = el("div", undefined, "row-label");
   label.append(el("div", period.label, "period"));
   const t = totals(periodActivities);
@@ -578,6 +553,8 @@ function periodLabel(period, periodActivities) {
     list.append(el("dt", name), el("dd", value));
   }
   label.append(list);
+  const planLink = view === "weekly" ? weekPlanLink(period) : null;
+  if (planLink) label.append(planLink);
   return label;
 }
 
@@ -656,7 +633,7 @@ function render() {
     const row = el("div", undefined, "grid-row");
     row.dataset.firstDay = period.firstDay;
     row.dataset.lastDay = period.lastDay;
-    row.append(periodLabel(period, activitiesBetween(byDay, period.firstDay, period.lastDay)));
+    row.append(periodLabel(view, period, activitiesBetween(byDay, period.firstDay, period.lastDay)));
     for (const column of period.columns) {
       row.append(periodCell(view, column, activitiesBetween(byDay, column.firstDay, column.lastDay), circleScale));
     }
@@ -888,8 +865,14 @@ function showMessage(text, isError) {
   $("message").hidden = false;
 }
 
+async function loadPlannedWeekStarts() {
+  const response = await fetch("/api/week-plans");
+  // Without them the log still shows, just with no links to saved plans.
+  if (response.ok) plannedWeekStarts = new Set((await response.json()).map(dayOfIsoDate));
+}
+
 async function loadActivities() {
-  const response = await fetch("/api/activities");
+  const [response] = await Promise.all([fetch("/api/activities"), loadPlannedWeekStarts()]);
   if (!response.ok) {
     showMessage("Couldn't load the training log.", true);
     return;
