@@ -13,3 +13,6 @@ training_log.json
 week_plans.json
 activity_files/
 recorded_activities/
+
+# Climb blocks computed from the recordings, kept so the Fitness tab needn't recompute them
+climb_blocks.json

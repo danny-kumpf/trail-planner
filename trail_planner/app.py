@@ -1,4 +1,4 @@
-"""Local web site with two tabs: shuffling weekly trail plans, and a training log.
+"""Local web site with three tabs: shuffling weekly trail plans, a training log, and climbing fitness.
 
 Usage: uv run python -m trail_planner.app, then open http://localhost:5000
 """
@@ -8,10 +8,34 @@ import secrets
 import threading
 from dataclasses import asdict
 from datetime import date, datetime, timezone
+from pathlib import Path
 from urllib.parse import urlsplit
 
-from flask import Flask, jsonify, redirect, request, url_for
+import plotly
+from flask import Flask, jsonify, redirect, request, send_from_directory, url_for
 
+from trail_planner.climb_blocks import CLIMB_FLOOR_GRADE_FRAC
+from trail_planner.climb_model import ClimbModel
+from trail_planner.fitness import (
+    DEFAULT_CLIMB_BLOCKS_PATH,
+    MIN_EFFORT_CLIMBING_S,
+    MIN_RECENT_EFFORTS,
+    MODEL_WINDOW,
+    STANDARD_CONDITIONS,
+    Effort,
+    FitnessOverview,
+    effort_analysis,
+    fitness_overview,
+)
+from trail_planner.fitness_plots import (
+    elevation_and_grade,
+    fitness_trend,
+    model_coverage,
+    predicted_vs_actual,
+    rate_vs_elevation,
+    rate_vs_heart_rate,
+    track_overview,
+)
 from trail_planner.planner import (
     NoCombinations,
     NoPlanInTolerance,
@@ -46,9 +70,11 @@ from trail_planner.training_log import (
     DEFAULT_ACTIVITY_FILES_DIR,
     DEFAULT_LOG_PATH,
     Activity,
+    ModelChoice,
     UnknownActivity,
     load_activities,
     set_manual,
+    set_model_choice,
 )
 from trail_planner.week_plans import (
     DEFAULT_WEEK_PLANS_PATH,
@@ -67,6 +93,7 @@ app.config["ACTIVITY_FILES_DIR"] = DEFAULT_ACTIVITY_FILES_DIR
 app.config["STRAVA_APP_PATH"] = DEFAULT_APP_PATH
 app.config["STRAVA_TOKENS_PATH"] = DEFAULT_TOKENS_PATH
 app.config["WEEK_PLANS_PATH"] = DEFAULT_WEEK_PLANS_PATH
+app.config["CLIMB_BLOCKS_PATH"] = DEFAULT_CLIMB_BLOCKS_PATH
 rng = random.Random()
 # Held while the training log is read, changed and written, so a sync and an edit can't undo each other.
 log_lock = threading.Lock()
@@ -76,6 +103,10 @@ sync_lock = threading.Lock()
 update_trails_lock = threading.Lock()
 # Held while saved week plans are read, changed and written, so two saves can't undo each other.
 week_plans_lock = threading.Lock()
+# Held while stored climb blocks are brought up to date, so two page loads don't both compute them.
+climb_blocks_lock = threading.Lock()
+# The plotly.js that the installed plotly writes figures for.
+PLOTLY_JS_DIR = Path(plotly.__file__).parent / "package_data"
 # The `state` of each approval sent to Strava and not yet returned, so the callback only accepts those.
 pending_oauth_states: set[str] = set()
 
@@ -145,6 +176,21 @@ def trail_planning():
 @app.get("/training-log")
 def training_log():
     return app.send_static_file("training_log.html")
+
+
+@app.get("/fitness")
+def fitness():
+    return app.send_static_file("fitness.html")
+
+
+@app.get("/fitness/efforts/<activity_id>")
+def fitness_effort_page(activity_id: str):
+    return app.send_static_file("fitness_effort.html")
+
+
+@app.get("/plotly.min.js")
+def plotly_js():
+    return send_from_directory(PLOTLY_JS_DIR, "plotly.min.js")
 
 
 @app.get("/api/trails")
@@ -303,6 +349,120 @@ def edit_activity(activity_id: str):
         return jsonify(error=f"no activity {activity_id!r}"), 404
     except ValueError as e:
         return jsonify(error=str(e)), 400
+
+
+@app.put("/api/activities/<activity_id>/model-choice")
+def edit_model_choice(activity_id: str):
+    """Require the activity in the climbing model, exclude it, or (`choice` null) leave it to its date."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or "choice" not in body:
+        return jsonify(error="body must be an object with a `choice` field"), 400
+    try:
+        choice = None if body["choice"] is None else ModelChoice(body["choice"])
+    except ValueError:
+        return jsonify(error=f"choice must be one of {', '.join(ModelChoice)} or null"), 400
+    try:
+        with log_lock:
+            edited = set_model_choice(activity_id, choice, app.config["TRAINING_LOG_PATH"])
+    except UnknownActivity:
+        return jsonify(error=f"no activity {activity_id!r}"), 404
+    return jsonify(activity_json(edited))
+
+
+def current_fitness() -> FitnessOverview:
+    with climb_blocks_lock:
+        return fitness_overview(
+            app.config["TRAINING_LOG_PATH"], app.config["ACTIVITY_FILES_DIR"], app.config["CLIMB_BLOCKS_PATH"]
+        )
+
+
+def climb_model_json(model: ClimbModel) -> dict:
+    return {
+        "at_standard_ft_per_hr": model.predict_at(STANDARD_CONDITIONS),
+        "hr_slope_ft_per_hr_per_bpm": model.hr_slope_ft_per_hr_per_bpm,
+        "elevation_slope_ft_per_hr_per_ft": model.elevation_slope_ft_per_hr_per_ft,
+        "grade_slope_ft_per_hr_per_frac": model.grade_slope_ft_per_hr_per_frac,
+        "r_squared": model.r_squared,
+        "num_blocks": model.num_blocks,
+        "elevation_span_ft": list(model.elevation_span_ft),
+    }
+
+
+def effort_json(effort: Effort, overview: FitnessOverview) -> dict:
+    activity = effort.activity
+    score = overview.scores.get(effort.id)
+    membership = overview.membership.get(effort.id)
+    return {
+        "id": effort.id,
+        "name": activity.name,
+        "type": activity.type.value,
+        "start_local": activity.start_local.isoformat(),
+        "climbing_s": effort.climbing_s,
+        "avg_heart_rate_bpm": effort.avg_heart_rate_bpm,
+        "elevation_span_ft": list(effort.elevation_span_ft),
+        "model_choice": activity.model_choice.value if activity.model_choice else None,
+        "membership": membership.value if membership else None,
+        "at_standard_ft_per_hr": score.at_standard_ft_per_hr if score else None,
+        "vs_model_frac": score.vs_model_frac if score else None,
+        "outside_model_elevations_frac": score.outside_model_elevations_frac if score else None,
+    }
+
+
+def fitness_context_json(overview: FitnessOverview) -> dict:
+    """What every fitness response carries: the standard conditions and the model."""
+    return {
+        "standard": {
+            "heart_rate_bpm": STANDARD_CONDITIONS.heart_rate_bpm,
+            "elevation_ft": STANDARD_CONDITIONS.elevation_ft,
+            "grade_frac": STANDARD_CONDITIONS.grade_frac,
+        },
+        "model": None if overview.model is None else climb_model_json(overview.model),
+        "no_model_reason": overview.no_model_reason,
+    }
+
+
+@app.get("/api/fitness")
+def fitness_summary():
+    overview = current_fitness()
+    return jsonify(
+        **fitness_context_json(overview),
+        model_window_days=MODEL_WINDOW.days,
+        min_recent_efforts=MIN_RECENT_EFFORTS,
+        min_effort_climbing_s=MIN_EFFORT_CLIMBING_S,
+        climb_floor_grade_frac=CLIMB_FLOOR_GRADE_FRAC,
+        efforts=[effort_json(e, overview) for e in overview.efforts],
+        num_unreadable=len(overview.unreadable),
+        trend=None if overview.model is None else fitness_trend(overview),
+        coverage=None if overview.model is None else model_coverage(overview),
+    )
+
+
+@app.get("/api/fitness/efforts/<activity_id>")
+def fitness_effort(activity_id: str):
+    """One effort in full: its scores and the figures for looking at it closely."""
+    overview = current_fitness()
+    effort = overview.effort(activity_id)
+    if effort is None:
+        return jsonify(error=f"no effort {activity_id!r}: it isn't on foot, has no heart rate, or climbs too little"), 404
+    try:
+        analysis = effort_analysis(activity_id, app.config["TRAINING_LOG_PATH"], app.config["ACTIVITY_FILES_DIR"])
+    except (ValueError, OSError) as e:
+        return jsonify(error=f"couldn't read the recording: {e}"), 500
+    panels = [elevation_and_grade(analysis), track_overview(analysis)]
+    if overview.model is not None:
+        comparison = overview.comparison_model(effort)
+        if comparison is not None:
+            panels.append(
+                predicted_vs_actual(analysis, comparison, compared_without_effort=effort.id in overview.membership)
+            )
+        if (coverage := model_coverage(overview, effort)) is not None:
+            panels.append(coverage)
+        at_standard_ft_per_hr = overview.scores[activity_id].at_standard_ft_per_hr
+        panels += [
+            rate_vs_heart_rate(effort, overview.model, at_standard_ft_per_hr),
+            rate_vs_elevation(effort, overview.model, at_standard_ft_per_hr),
+        ]
+    return jsonify(**fitness_context_json(overview), effort=effort_json(effort, overview), panels=panels)
 
 
 def strava_redirect_uri() -> str:

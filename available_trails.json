@@ -154,5 +154,13 @@
             "runnable_mi": 1.36
         },
         "manual": {}
+    },
+    "betasso_canyon_loop_from_a_lodge": {
+        "from_gpx": {
+            "distance_mi": 4.81,
+            "vert_ft": 1074,
+            "runnable_mi": 2.4
+        },
+        "manual": {}
     }
 }

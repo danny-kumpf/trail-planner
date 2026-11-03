@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Effort</title>
+<link rel="stylesheet" href="/static/site.css">
+<script src="/plotly.min.js"></script>
+<script src="/static/fitness.js"></script>
+<style>
+  :root { --page-width: 1100px; }
+  .back { color: var(--muted); text-decoration: none; font-weight: 600; }
+  .back:hover { color: var(--text); }
+  h1 { margin: 8px 0 0; }
+  .date { color: var(--muted); margin: 0 0 16px; }
+  .scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .score {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+  }
+  .score .label { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+  .score .value { font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .score .note { font-size: 0.85rem; color: var(--muted); }
+  .score .note.warn { color: var(--warn); }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 16px 8px; margin-top: 24px; }
+  .panel h2 { margin: 0 0 4px; color: var(--text); }
+  details.panel > summary { cursor: pointer; }
+  details.panel > summary h2 { display: inline; }
+  details.panel:not([open]) { padding-bottom: 16px; }
+  .panel .caption { margin: 0 0 8px; font-size: 0.9rem; color: var(--muted); }
+  .status { color: var(--muted); }
+  .status.warn { color: var(--warn); }
+</style>
+</head>
+<body>
+<header class="tabs">
+  <nav>
+    <a href="/trail-planning">Trail Planning</a>
+    <a href="/training-log">Training Log</a>
+    <a href="/fitness" aria-current="page">Fitness</a>
+  </nav>
+</header>
+<main>
+  <a class="back" href="/fitness">← All efforts</a>
+  <h1 id="name"></h1>
+  <p class="date" id="date"></p>
+  <p class="status" id="status">Loading…</p>
+  <div class="scores" id="scores"></div>
+  <div id="panels"></div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const activityId = decodeURIComponent(window.location.pathname.split("/").pop());
+
+function score(label, value, ...notes) {
+  const box = fitnessEl("div", undefined, "score");
+  box.append(fitnessEl("div", label, "label"), fitnessEl("div", value, "value"));
+  for (const note of notes) if (note) box.append(fitnessEl("div", note.text, `note ${note.className ?? ""}`));
+  return box;
+}
+
+function membershipNote(effort) {
+  switch (effort.membership) {
+    case "required": return "In the model: required";
+    case "recent": return "In the model: recent";
+    default: return effort.model_choice === "exclude" ? "Excluded from the model" : "Not in the model";
+  }
+}
+
+async function load() {
+  const response = await fetch(`/api/fitness/efforts/${encodeURIComponent(activityId)}`);
+  const detail = await response.json();
+  if (!response.ok) {
+    $("status").className = "status warn";
+    $("status").textContent = detail.error;
+    return;
+  }
+  const effort = detail.effort;
+  document.title = effort.name;
+  $("name").textContent = effort.name;
+  $("date").textContent = fmtDate(effort.start_local);
+  $("status").textContent = detail.model ? "" : `No model yet: ${detail.no_model_reason}.`;
+
+  const [low, high] = effort.elevation_span_ft;
+  const scores = [
+    score("Climbing", fmtMinutes(effort.climbing_s),
+          { text: `avg ${Math.round(effort.avg_heart_rate_bpm)} bpm, ${fmtFt(low)}–${fmtFt(high)}` }),
+  ];
+  if (detail.model) {
+    scores.push(
+      score("At standard conditions", fmtRate(effort.at_standard_ft_per_hr),
+            { text: standardConditionsText(detail.standard) },
+            { text: `Model: ${fmtRate(detail.model.at_standard_ft_per_hr)}` }),
+      score("Vs model", effort.vs_model_frac === null ? "–" : fmtSignedPct(effort.vs_model_frac),
+            { text: effort.membership ? "Compared with the model fit without this effort" : "Compared with the model" },
+            { text: membershipNote(effort) },
+            { text: elevationWarning(effort), className: "warn" }),
+    );
+  }
+  $("scores").replaceChildren(...scores);
+
+  for (const panel of detail.panels) await appendPanel($("panels"), panel);
+}
+
+load();
+</script>
+</body>
+</html>

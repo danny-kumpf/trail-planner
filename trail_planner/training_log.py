@@ -6,7 +6,8 @@ Each entry is keyed by Strava activity id and has these blocks:
 - `recorded`: what we compute from those two (see activity_stats), rewritten with them.
 - `manual`: hand edits, written when edits are saved from the page. It holds the grade and
   overrides of the overridable fields. A field's value is the manual one if set, else the
-  recorded one.
+  recorded one. It also holds `model_choice`, set on the Fitness tab, which puts the activity in
+  the climbing model or keeps it out.
 """
 
 import re
@@ -44,7 +45,14 @@ class Grade(StrEnum):
     F = "F"
 
 
-NOTE_GRADE_PATTERN = re.compile(r"^\s*Grade:\s*([A-Za-z])\b", re.MULTILINE)
+class ModelChoice(StrEnum):
+    """Whether an activity is put in the climbing model whatever its date, or kept out of it."""
+
+    REQUIRE = "require"
+    EXCLUDE = "exclude"
+
+
+NOTE_GRADE_PATTERN =re.compile(r"^\s*Grade:\s*([A-Za-z])\b", re.MULTILINE)
 
 # The recorded numbers a hand edit may replace, e.g. vert for a treadmill session.
 OVERRIDABLE_NUMBER_FIELDS = ("moving_time_s", "distance_mi", "vert_ft", "running_mi")
@@ -69,6 +77,7 @@ class Activity:
     # The recorded values of the overridable fields, whether or not they're overridden.
     recorded: dict[str, float | str]
     overridden_fields: frozenset[str]
+    model_choice: ModelChoice | None
 
 
 class UnknownActivity(KeyError):
@@ -94,6 +103,7 @@ def activity_from_entry(activity_id: str, entry: dict) -> Activity:
         grade=Grade(manual["grade"]) if "grade" in manual else None,
         recorded={"type": recorded["type"], **{field: float(recorded[field]) for field in OVERRIDABLE_NUMBER_FIELDS}},
         overridden_fields=frozenset(overrides),
+        model_choice=ModelChoice(manual["model_choice"]) if "model_choice" in manual else None,
     )
 
 
@@ -168,10 +178,27 @@ def validated_manual(manual: dict) -> dict:
 
 
 def set_manual(activity_id: str, manual: dict, path: Path = DEFAULT_LOG_PATH) -> Activity:
-    """Replace an activity's hand edits, returning the activity with them applied."""
+    """Replace an activity's grade and overrides, returning the activity with them applied. Its
+    model choice is kept, as it's set separately."""
     entries = read_log(path)
     if activity_id not in entries:
         raise UnknownActivity(activity_id)
-    entries[activity_id]["manual"] = validated_manual(manual)
+    previous = entries[activity_id].get("manual", {})
+    kept = {"model_choice": previous["model_choice"]} if "model_choice" in previous else {}
+    entries[activity_id]["manual"] = {**validated_manual(manual), **kept}
+    write_entries(path, entries)
+    return activity_from_entry(activity_id, entries[activity_id])
+
+
+def set_model_choice(activity_id: str, choice: ModelChoice | None, path: Path = DEFAULT_LOG_PATH) -> Activity:
+    """Require the activity in the climbing model, exclude it, or (None) leave it to its date."""
+    entries = read_log(path)
+    if activity_id not in entries:
+        raise UnknownActivity(activity_id)
+    manual = entries[activity_id].setdefault("manual", {})
+    if choice is None:
+        manual.pop("model_choice", None)
+    else:
+        manual["model_choice"] = choice.value
     write_entries(path, entries)
     return activity_from_entry(activity_id, entries[activity_id])

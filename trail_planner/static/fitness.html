@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fitness</title>
+<link rel="stylesheet" href="/static/site.css">
+<script src="/plotly.min.js"></script>
+<script src="/static/fitness.js"></script>
+<style>
+  :root { --page-width: 1100px; }
+  h1 { margin: 0 0 16px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+  }
+  .headline { font-size: 1.15rem; margin: 0 0 4px; }
+  .headline strong { font-size: 1.5rem; }
+  .muted, .caption { color: var(--muted); }
+  .card p { margin: 4px 0 0; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 16px 8px; margin-top: 24px; }
+  .panel h2 { margin: 0 0 4px; color: var(--text); }
+  details.panel > summary { cursor: pointer; }
+  details.panel > summary h2 { display: inline; }
+  details.panel:not([open]) { padding-bottom: 16px; }
+  .panel .caption { margin: 0 0 8px; font-size: 0.9rem; }
+  .status { color: var(--muted); }
+  .status.warn { color: var(--warn); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th:nth-child(-n+2), td:nth-child(-n+2) { text-align: left; }
+  td.effort-name { white-space: normal; min-width: 12rem; }
+  th { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+  .warn-mark { color: var(--warn); margin-left: 4px; cursor: help; }
+  a.explore {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent-text);
+    background: var(--accent);
+    border-radius: 6px;
+    padding: 3px 10px;
+    text-decoration: none;
+  }
+</style>
+</head>
+<body>
+<header class="tabs">
+  <nav>
+    <a href="/trail-planning">Trail Planning</a>
+    <a href="/training-log">Training Log</a>
+    <a href="/fitness" aria-current="page">Fitness</a>
+  </nav>
+</header>
+<main>
+  <h1>Fitness</h1>
+  <p class="status" id="status">Loading… The first visit analyses every recording, which takes a minute or so.</p>
+  <section class="card" id="model" hidden></section>
+  <div id="charts"></div>
+  <h2 id="efforts-heading" hidden>Efforts</h2>
+  <div class="table-scroll" id="efforts"></div>
+  <p class="muted" id="footnote"></p>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function membershipText(effort) {
+  if (effort.membership === "required") return "required";
+  if (effort.membership === "recent") return "recent";
+  return "";
+}
+
+function renderModel(fitness) {
+  const card = $("model");
+  card.hidden = false;
+  const standard = standardConditionsText(fitness.standard);
+  if (!fitness.model) {
+    card.replaceChildren(fitnessEl("p", `No model yet: ${fitness.no_model_reason}.`, "status warn"));
+    return;
+  }
+  const model = fitness.model;
+  const inModel = fitness.efforts.filter((e) => e.membership);
+  const dates = inModel.map((e) => e.start_local).sort();
+  const headline = fitnessEl("p", undefined, "headline");
+  headline.append("Model: ", fitnessEl("strong", fmtRate(model.at_standard_ft_per_hr)), ` at ${standard}`);
+  const [low, high] = model.elevation_span_ft;
+  card.replaceChildren(
+    headline,
+    fitnessEl("p", `Changing by ${modelSlopesText(model)}`),
+    fitnessEl("p",
+      `Fit over ${inModel.length} efforts from ${fmtDate(dates[0])} to ${fmtDate(dates[dates.length - 1])}: ` +
+      `${model.num_blocks} climb blocks at ${fmtFt(low)}–${fmtFt(high)}, R² ${model.r_squared.toFixed(2)}.`, "muted"),
+    fitnessEl("p",
+      `The model is fit from the efforts in the ${fitness.model_window_days} days before the latest one you haven't ` +
+      `excluded, or the latest ${fitness.min_recent_efforts} if that's more, plus any you require.`, "muted"),
+  );
+  if (fitness.standard.elevation_ft < low || fitness.standard.elevation_ft > high) {
+    card.append(fitnessEl("p",
+      `The model wasn't fit on any climbing at ${fmtFt(fitness.standard.elevation_ft)}, so every rate at standard ` +
+      "conditions extrapolates its elevation term. Require some efforts that span it.", "status warn"));
+  }
+}
+
+async function setChoice(effort, choice, row) {
+  for (const box of row.querySelectorAll("input")) box.disabled = true;
+  $("status").className = "status";
+  $("status").textContent = "Refitting…";
+  const response = await fetch(`/api/activities/${encodeURIComponent(effort.id)}/model-choice`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ choice }),
+  });
+  if (!response.ok) {
+    $("status").className = "status warn";
+    $("status").textContent = `Couldn't save: ${(await response.json()).error}`;
+    for (const box of row.querySelectorAll("input")) box.disabled = false;
+    return;
+  }
+  await load();
+}
+
+function choiceCell(effort, choice, label) {
+  const box = fitnessEl("input", undefined, `choice choice-${choice}`);
+  box.type = "checkbox";
+  box.checked = effort.model_choice === choice;
+  box.setAttribute("aria-label", `${label} ${effort.name}`);
+  // Checking one box replaces the effort's other choice; unchecking leaves it to its date.
+  box.addEventListener("change", () => setChoice(effort, box.checked ? choice : null, box.closest("tr")));
+  const td = fitnessEl("td", undefined, "choice-cell");
+  td.append(box);
+  return td;
+}
+
+function vsModelCell(effort) {
+  const td = fitnessEl("td", effort.vs_model_frac === null ? "–" : fmtSignedPct(effort.vs_model_frac));
+  const warning = elevationWarning(effort);
+  if (warning) {
+    const mark = fitnessEl("span", "⚠", "warn-mark");
+    mark.title = warning;
+    td.append(mark);
+  }
+  return td;
+}
+
+function effortsTable(efforts) {
+  const table = fitnessEl("table");
+  const head = table.createTHead().insertRow();
+  for (const [text, className] of [
+    ["Date"], ["Effort"], ["Climbing"], ["Avg HR"], ["Elevation"], ["At standard"], ["Vs model"],
+    ["In model"], ["Require", "choice-cell"], ["Exclude", "choice-cell"], [""],
+  ]) head.append(fitnessEl("th", text, className));
+  head.cells[5].title = "Climbing rate moved along the model's slopes to the standard conditions";
+  head.cells[6].title = "How much more it climbed than the model predicted for its own heart rate, elevation and " +
+                        "grade. Efforts in the model are compared with the model fit without them.";
+  const body = table.createTBody();
+  for (const effort of efforts) {
+    const row = body.insertRow();
+    row.classList.toggle("ruled-out", effort.model_choice === "exclude");
+    const [low, high] = effort.elevation_span_ft;
+    const explore = fitnessEl("a", "Explore", "explore");
+    explore.href = `/fitness/efforts/${encodeURIComponent(effort.id)}`;
+    const exploreCell = fitnessEl("td");
+    exploreCell.append(explore);
+    row.append(
+      fitnessEl("td", fmtDate(effort.start_local)),
+      fitnessEl("td", effort.name, "effort-name"),
+      fitnessEl("td", fmtMinutes(effort.climbing_s)),
+      fitnessEl("td", `${Math.round(effort.avg_heart_rate_bpm)} bpm`),
+      fitnessEl("td", `${(low / 1000).toFixed(1)}–${(high / 1000).toFixed(1)}k ft`),
+      fitnessEl("td", effort.at_standard_ft_per_hr === null ? "–" : fmtRate(effort.at_standard_ft_per_hr)),
+      vsModelCell(effort),
+      fitnessEl("td", membershipText(effort)),
+      choiceCell(effort, "require", "Require"),
+      choiceCell(effort, "exclude", "Exclude"),
+      exploreCell,
+    );
+  }
+  return table;
+}
+
+async function load() {
+  const response = await fetch("/api/fitness");
+  const fitness = await response.json();
+  if (!response.ok) {
+    $("status").className = "status warn";
+    $("status").textContent = fitness.error;
+    return;
+  }
+  const effortDefinition = `hikes, trail runs and races with heart rate and at least ` +
+    `${fmtMinutes(fitness.min_effort_climbing_s)} of climbing steeper than ${Math.round(fitness.climb_floor_grade_frac * 100)}%`;
+  $("status").textContent = fitness.efforts.length ? "" : `No efforts yet. Efforts are ${effortDefinition}.`;
+  renderModel(fitness);
+  $("charts").replaceChildren();
+  drawnFigures.length = 0;
+  if (fitness.coverage) await appendPanel($("charts"), fitness.coverage);
+  if (fitness.trend) {
+    const plot = await appendPanel($("charts"), fitness.trend);
+    plot.on("plotly_click", (event) => {
+      const [activityId] = event.points[0].customdata;
+      window.location.href = `/fitness/efforts/${encodeURIComponent(activityId)}`;
+    });
+  }
+  $("efforts-heading").hidden = !fitness.efforts.length;
+  $("efforts").replaceChildren(effortsTable(fitness.efforts));
+  $("footnote").textContent =
+    `Efforts are ${effortDefinition}.` +
+    (fitness.num_unreadable ? ` ${fitness.num_unreadable} recording(s) couldn't be analysed, e.g. for lack of elevation.` : "");
+}
+
+load();
+</script>
+</body>
+</html>

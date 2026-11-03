@@ -47,7 +47,7 @@ uv sync
 uv run python -m trail_planner.app
 ```
 
-Open http://localhost:5000. The site has two tabs at the top: **Trail Planning** (described here) and **Training Log** (see [Training log](#training-log)). On Trail Planning, enter your targets, set the outings range (default 1–6), the tolerance, and whether a trail may repeat within the week. Then click **Shuffle** until you get a plan you like. Below the plan, **Included Trails** expands to a table of every plannable trail with its vert, distance and runnable miles. Its **Require** and **Exclude** checkboxes put a trail in every plan (say, one you want to run this week) or keep it out of all of them (one you just ran); by default neither is checked. Your settings and these choices are kept for each week while the browser tab is open, so going to the Training Log and back doesn't reset them. Under that, **Excluded Trails** lists the ones that don't have all three yet.
+Open http://localhost:5000. The site has three tabs at the top: **Trail Planning** (described here), **Training Log** (see [Training log](#training-log)) and **Fitness** (see [Fitness](#fitness)). On Trail Planning, enter your targets, set the outings range (default 1–6), the tolerance, and whether a trail may repeat within the week. Then click **Shuffle** until you get a plan you like. Below the plan, **Included Trails** expands to a table of every plannable trail with its vert, distance and runnable miles. Its **Require** and **Exclude** checkboxes put a trail in every plan (say, one you want to run this week) or keep it out of all of them (one you just ran); by default neither is checked. Your settings and these choices are kept for each week while the browser tab is open, so going to the Training Log and back doesn't reset them. Under that, **Excluded Trails** lists the ones that don't have all three yet.
 
 ### Save a plan for the week
 
@@ -140,14 +140,14 @@ Each activity in `training_log.json` has these blocks:
     "recorded": {"name": "Mallory Cave with Jess", "type": "hike", "start_local": "2026-10-04T15:25:55",
                  "moving_time_s": 5921, "distance_mi": 3.23, "vert_ft": 942, "running_mi": 0.02,
                  "avg_heart_rate_bpm": 107, "max_heart_rate_bpm": 138},
-    "manual": {"grade": "B"}
+    "manual": {"grade": "B", "model_choice": "exclude"}
 }
 ```
 
 - `strava` is Strava's own summary, as the export or a sync gives it. Its numbers aren't shown; they're kept for reference and for comparing with ours. `workout_type` is how Strava marks a race. The export doesn't give it, so it's `null` until the first sync.
 - `recording_file` is the activity's recording in `activity_files/`: a FIT or GPX file from the export, or streams from a sync. It is `null` for an activity entered by hand on Strava.
 - `recorded` is what the page shows. It is computed from `strava` and the recording file, and rewritten whenever they change.
-- `manual` holds your edits. It's written only when you save on the page, and never touched by imports or syncs.
+- `manual` holds your edits. It's written only when you save on the page, and never touched by imports or syncs. Its `model_choice` is the activity's Require (`"require"`) or Exclude (`"exclude"`) on the [Fitness](#fitness) tab; editing the activity on the Training Log keeps it.
 
 When an activity first enters the log, by import or sync, a "Grade: X" line in its Strava private note becomes its grade. That happens only once, so later imports and syncs won't bring back a grade you cleared.
 
@@ -161,7 +161,7 @@ How each value in `recorded` is computed:
   - Phone-recorded runs on steep trails come out higher, because Strava counts slow climbing in a run as stopped. For example, Strava gives 9 of 66 min on the Manitou Incline.
 - **Start time.** Strava's local start time, from a sync. Until the first sync, activities from the export use the watch's local time from FIT files. GPX files don't carry one, so they use this computer's time zone.
 - **Type.** Strava's type is mapped to the log's type: Hike and Walk become Hike; Run and Trail Run become Trail Run, or Race if Strava marks it as a race; Ride becomes Bike; Backcountry Ski and Nordic Ski become Ski; anything else becomes Workout. Resort skiing and snowboarding (Strava's Alpine Ski and Snowboard) aren't training, so they're left out of the log altogether.
-- **Heart rate** is stored for later use but not shown yet.
+- **Heart rate** is stored but not shown on the Training Log. The Fitness tab uses the recording's heart rate.
 - **Running** is computed only for Hike, Trail Run and Race. Bike, Ski and Workout get 0, because a bike's pedalling cadence would look like running.
   - Recordings with cadence on at least 90% of samples are judged by cadence and pace together:
     1. Each stretch between samples has running cadence if the cadence recorded there is at least 155 steps/min. Recordings store cadence per foot, so their values are doubled first. A cadence dropout counts as non-running cadence.
@@ -176,6 +176,37 @@ After changing any of these methods, recompute every activity from the stored fi
 ```
 uv run python -m trail_planner.rebuild_training_log
 ```
+
+### Fitness
+
+The **Fitness** tab tracks how fast you climb, using a model of climbing rate fit to your recent efforts.
+
+**The model.** On sustained climbs, vertical feet per hour rises steadily with effort. The model is a straight-line fit of climbing rate (ft/hr) against heart rate, elevation and grade. It's fit over every 45 s block of climbing in its efforts. Each block counts for how long it lasted.
+
+An **effort** is a hike, trail run or race whose recording has heart rate and at least 10 minutes of climbing. Climbing means terrain steeper than 10% that's being climbed at at least 100 ft/hr; slower than that is stopped, not climbing slowly. A climb also has to last at least 90 s, so heart rate has time to catch up with the effort. Grade comes from elevation against distance only, smoothed over 200 m, so stopping on a slope doesn't change it. A stretch where the recording claims more than 6,000 ft/hr up or 8,000 ft/hr down is a GPS fault, not fast climbing, so its rate is treated as unknown. If heart rate starts out reading far too low and then jumps up, as some monitors do, it isn't used until it settles.
+
+**Which efforts the model uses.** By default, the efforts from the 60 days before the latest one. If that's fewer than 5, it uses the latest 5. In the efforts table, **Require** puts an effort in the model whatever its date, and **Exclude** keeps one out, e.g. a weighted carry. The elevation term only holds for elevations the model was fit on. So when comparing efforts at different elevations, require some efforts that span them.
+
+**Model coverage**, collapsed until you open it, is a heatmap of the minutes of climbing the model is fit on, by heart rate (5 bpm bins) and elevation (500 ft bins). It leaves grade out, as grade varies least of the three. Blank cells are where the model extrapolates. Hover over a cell to see which efforts are in it. It stays open and redraws as you require or exclude efforts, so you can watch a gap fill.
+
+**Scores.** Each effort gets two numbers:
+
+- **At standard**: the effort's climbing rate moved along the model's slopes to 150 bpm, 8,000 ft and 15% grade. It answers "how fast was I climbing?" in ft/hr, whatever the terrain and heart rate. The chart above the table plots it over time.
+- **Vs model**: how much more vert the effort climbed than the model predicted for its own heart rate, elevation and grade. An effort in the model is compared with the model fit without it. Otherwise it would partly be compared with itself. ⚠ marks an effort with climbing at elevations that model wasn't fit on, where the comparison extrapolates.
+
+**Explore** opens an effort's page:
+
+- its elevation over time and distance, and its grade;
+- its climbs, with each climb's average rate, and its heart rate;
+- its climbing rate block by block, against what the model predicted;
+- under **Model coverage**, the heatmap for the model it's compared with, with the effort's own blocks drawn on top, so you can see where the comparison extrapolates;
+- its climbing rate against heart rate and against elevation, with the model's line.
+
+**The heart rate lag.** Heart rate trails the effort that produced it, so each block is paired with the heart rate 45 s later. That's a typical lag, not a measured one: correlating heart rate with climbing rate never gave a convincing lag on these recordings. A different heart rate monitor may lag differently, so revisit `HR_LAG_S` in `trail_planner/climb_blocks.py` after changing monitors.
+
+**Stored climb blocks.** Working out an activity's climb blocks takes about half a second, so they're kept in `climb_blocks.json`. Each entry records what it was computed from: the recording, Strava's crop and the analysis version. An entry is redone when any of those changes. The first visit to the tab computes every activity's, which takes about half a minute. After changing how climbs are found or blocks are cut, increase `CLIMB_ANALYSIS_VERSION` in `trail_planner/climb_blocks.py` so they're computed again. Deleting the file has the same effect.
+
+The model covers climbing only. Running on flat ground and downhill are limited by different things and aren't modelled yet.
 
 ### Run the tests
 
@@ -206,12 +237,20 @@ uv run pytest
 | `trail_planner/strava_api.py` | Strava's API: approving access, refreshing tokens, reading activities |
 | `trail_planner/strava_sync.py` | Brings the training log up to date with Strava |
 | `strava_app.json`, `strava_tokens.json` | Your Strava API application, and the access it was given (keep private) |
+| `trail_planner/climb_signals.py` | Recording → vertical rate, grade and heart rate on an even time grid |
+| `trail_planner/climb_blocks.py` | Sustained climbs, cut into the 45 s blocks the model is fit on (heart rate lag lives here) |
+| `trail_planner/climb_model.py` | The climbing model: rate from heart rate, elevation and grade |
+| `trail_planner/fitness.py` | Which efforts the model uses, each effort's scores, and the stored climb blocks |
+| `trail_planner/fitness_plots.py` | The Fitness tab's figures |
+| `climb_blocks.json` | Each activity's climb blocks, kept so they needn't be recomputed |
 | `trail_planner/json_store.py` | Reading and writing the JSON data files |
 | `trail_planner/app.py` | Flask server for the pages and API |
-| `trail_planner/static/site.css` | Styles shared by both tabs, including the tab bar |
+| `trail_planner/static/site.css` | Styles shared by every tab, including the tab bar |
 | `trail_planner/static/calendar.js` | Calendar days and weeks, and the week start day, shared by both tabs |
 | `trail_planner/static/trail_planning.html` | The Trail Planning tab |
 | `trail_planner/static/training_log.html` | The Training Log tab |
+| `trail_planner/static/fitness.html`, `fitness_effort.html` | The Fitness tab, and an effort's Explore page |
+| `trail_planner/static/fitness.js` | Drawing figures and formatting, shared by the Fitness pages |
 | `tests/` | Unit tests |
 
 ## Not yet supported

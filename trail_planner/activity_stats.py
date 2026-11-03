@@ -138,6 +138,14 @@ def recorded_block(strava: dict, recording: Recording | None) -> dict:
     return recorded
 
 
+def kept_recording(entry: dict, activity_files_dir: Path) -> Recording | None:
+    """The part of a log entry's recording that Strava kept; None if it has no recording."""
+    recording_file = entry.get("recording_file")
+    if not recording_file:
+        return None
+    return as_kept_on_strava(entry["strava"], read_recording(activity_files_dir / recording_file))
+
+
 def recorded_for_entry(entry: dict, activity_files_dir: Path) -> dict:
     """The `recorded` block for a log entry, from its `strava` block and recording file."""
     recording_file = entry.get("recording_file")

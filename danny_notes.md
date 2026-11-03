@@ -25,4 +25,12 @@ Anyway. What do I want the UI to look like?
 - I think I want it to automatically maintain a model from the last ~month of efforts
 - Plus a table of all efforts with a check/X column like we have on the other 
   page, but this one lets me require/exclude an effort from being in the model
-- 
+- Each effort could have an "explore" button next to it. This would open a new page with that effort's vert/hr plots, similar to the "explore" option in the other repo
+- In addition to the vert/hr climbing plot, I'd like a new plot that shows what the current model would have predicted for the effort, and the delta with reality
+- We can skip efforts with no heart rate data, for now. no need
+  to label each effort with effort levels like we did in the other
+  project. That won't be as accurate as actually having hr data.
+
+For now, let's just implement the models from the other repo, and not worry too much yet about what to do for steep downhills.
+
+All this modeling should be on a new third tab on the top of the page.
