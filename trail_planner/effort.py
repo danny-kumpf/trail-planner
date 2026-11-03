@@ -176,35 +176,35 @@ def ignore_brief_gait_changes(
     return step_gaits(stretches)
 
 
-def split_by_gait(
+def running_steps_by_gait(
     track: RecordedTrack,
     running_threshold_steps_per_min: float = DEFAULT_RUNNING_THRESHOLD_STEPS_PER_MIN,
     max_running_pace_min_per_mi: float = DEFAULT_MAX_RUNNING_PACE_MIN_PER_MI,
     min_gait_stretch_s: float = DEFAULT_MIN_GAIT_STRETCH_S,
-) -> GaitSplit:
-    """Running is a running cadence held at a running pace; everything else is hiking."""
+) -> np.ndarray:
+    """Whether each step was run: a running cadence held at a running pace. Everything else is hiking."""
     if not track.has_usable_cadence:
         raise ValueError("the recording has no cadence, or too little to judge running by")
     # A step whose cadence dropped out doesn't have running cadence.
     has_running_cadence = (
         np.nan_to_num(track.step_cadence_steps_per_min, nan=0.0) >= running_threshold_steps_per_min
     )
-    is_running = ignore_brief_gait_changes(
+    return ignore_brief_gait_changes(
         slow_running_as_hiking(has_running_cadence, track, max_running_pace_min_per_mi),
         track,
         min_gait_stretch_s,
     )
-    return gait_split(is_running, track)
 
 
-def split_by_pace(
+def running_steps_by_pace(
     track: RecordedTrack,
     running_pace_min_per_mi: float = DEFAULT_PACE_ONLY_RUNNING_PACE_MIN_PER_MI,
     min_gait_stretch_s: float = DEFAULT_MIN_GAIT_STRETCH_S,
-) -> GaitSplit:
-    """For recordings without cadence: running is any stretch faster than `running_pace_min_per_mi`.
+) -> np.ndarray:
+    """For recordings without cadence: whether each step is in a stretch faster than
+    `running_pace_min_per_mi`.
 
-    Cruder than `split_by_gait`, since a fast hike downhill and a slow run uphill overlap in pace.
+    Cruder than `running_steps_by_gait`, since a fast hike downhill and a slow run uphill overlap in pace.
     """
     step_pace_min_per_mi = np.divide(
         track.step_duration_s / 60,
@@ -212,10 +212,12 @@ def split_by_pace(
         out=np.full(len(track.step_m), np.inf),
         where=track.step_m > 0,
     )
-    is_running = ignore_brief_gait_changes(
-        step_pace_min_per_mi < running_pace_min_per_mi, track, min_gait_stretch_s
-    )
-    return gait_split(is_running, track)
+    return ignore_brief_gait_changes(step_pace_min_per_mi < running_pace_min_per_mi, track, min_gait_stretch_s)
+
+
+def running_steps(track: RecordedTrack) -> np.ndarray:
+    """Whether each step was run: by cadence and pace if the track has enough cadence, else by pace alone."""
+    return running_steps_by_gait(track) if track.has_usable_cadence else running_steps_by_pace(track)
 
 
 def gait_split(is_running: np.ndarray, track: RecordedTrack) -> GaitSplit:

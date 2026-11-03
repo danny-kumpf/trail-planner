@@ -17,7 +17,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from trail_planner.climb_blocks import CLIMB_FLOOR_GRADE_FRAC, ClimbAnalysis, ClimbRun
-from trail_planner.climb_model import BlockColumns, ClimbModel
+from trail_planner.climb_model import BlockColumns, ClimbModel, ft_per_hr_per_w_per_kg
 from trail_planner.climb_signals import true_runs
 from trail_planner.fitness import STANDARD_CONDITIONS, Effort, FitnessOverview
 
@@ -523,26 +523,39 @@ def predicted_vs_actual(analysis: ClimbAnalysis, comparison: ClimbModel, compare
     return panel(
         "Predicted vs climbed",
         "Each climb block's vertical rate, against what " + model_note + " predicts for the block's heart rate, "
-        "elevation and grade. Below, green blocks climbed faster than predicted and orange ones slower.",
+        "elevation, grade and gait. Below, green blocks climbed faster than predicted and orange ones slower.",
         build,
     )
 
 
 def adjusted_ft_per_hr(model: ClimbModel, columns: BlockColumns, keep: str) -> np.ndarray:
-    """Each block's rate moved along the model's slopes to the standard conditions, except in `keep`.
+    """Each block's rate moved through the model to the standard conditions, except in `keep`, which
+    is "heart_rate" or "elevation".
 
     A line through the raw cloud against one variable would mix in the others. Moved to common
-    conditions in the others, the points line up with the model's slope in the kept one, and still
-    show whether that relationship is really straight.
+    conditions in the others, the points line up with the model's line in the kept one, and still
+    show whether that relationship is really straight. Grade and gait are always moved, so every
+    block's power is spent on the same terrain.
     """
-    adjusted = columns.vert_rate_ft_per_hr.copy()
+    standard = STANDARD_CONDITIONS
+    adjusted_w_per_kg = columns.power_w_per_kg
     if keep != "heart_rate":
-        adjusted -= model.hr_slope_ft_per_hr_per_bpm * (columns.heart_rate_bpm - STANDARD_CONDITIONS.heart_rate_bpm)
+        adjusted_w_per_kg = adjusted_w_per_kg - model.hr_slope_w_per_kg_per_bpm * (
+            columns.heart_rate_bpm - standard.heart_rate_bpm
+        )
     if keep != "elevation":
-        adjusted -= model.elevation_slope_ft_per_hr_per_ft * (columns.elevation_ft - STANDARD_CONDITIONS.elevation_ft)
-    if keep != "grade":
-        adjusted -= model.grade_slope_ft_per_hr_per_frac * (columns.grade_frac - STANDARD_CONDITIONS.grade_frac)
-    return adjusted
+        adjusted_w_per_kg = adjusted_w_per_kg - model.elevation_slope_w_per_kg_per_ft * (
+            columns.elevation_ft - standard.elevation_ft
+        )
+    return adjusted_w_per_kg * ft_per_hr_per_w_per_kg(standard.grade_frac, standard.running_frac)
+
+
+def gait_text(running_frac: float) -> str:
+    if running_frac == 0:
+        return "hiking"
+    if running_frac == 1:
+        return "running"
+    return f"{running_frac:.0%} running"
 
 
 def rate_against(
@@ -626,14 +639,17 @@ def rate_vs_heart_rate(effort: Effort, model: ClimbModel, at_standard_ft_per_hr:
         x_hover="HR %{x:.0f}",
         color_by=columns.elevation_ft,
         color_title="elevation<br>(ft)",
-        line_name=f"model: {model.hr_slope_ft_per_hr_per_bpm:+.0f} ft/hr per bpm",
-        predict_line=lambda hr: model.predict_ft_per_hr(hr, standard.elevation_ft, standard.grade_frac),
+        line_name=f"model: {model.hr_slope_ft_per_hr_per_bpm(standard):+.0f} ft/hr per bpm",
+        predict_line=lambda hr: model.predict_ft_per_hr(
+            hr, standard.elevation_ft, standard.grade_frac, standard.running_frac
+        ),
     )
     return panel(
         "Vertical rate vs heart rate",
-        f"Each climb block moved along the model's slopes to {standard.elevation_ft:,.0f} ft and "
-        f"{standard.grade_frac:.0%} grade, so what's left is heart rate; color is the block's real elevation. The "
-        f"diamond is this effort's rate at standard conditions: its blocks' average, at {standard.heart_rate_bpm:.0f} bpm.",
+        f"Each climb block moved through the model to {standard.elevation_ft:,.0f} ft, "
+        f"{standard.grade_frac:.0%} grade and {gait_text(standard.running_frac)}, so what's left is heart rate; "
+        "color is the block's real elevation. The diamond is this effort's rate at standard conditions: its blocks' "
+        f"average, at {standard.heart_rate_bpm:.0f} bpm.",
         build,
     )
 
@@ -652,16 +668,17 @@ def rate_vs_elevation(effort: Effort, model: ClimbModel, at_standard_ft_per_hr: 
         x_hover="%{x:,.0f} ft",
         color_by=columns.heart_rate_bpm,
         color_title="heart rate<br>(bpm)",
-        line_name=f"model: {model.elevation_slope_ft_per_hr_per_ft * 1000:+.0f} ft/hr per 1,000 ft",
+        line_name=f"model: {model.elevation_slope_ft_per_hr_per_ft(standard) * 1000:+.0f} ft/hr per 1,000 ft",
         predict_line=lambda elevation_ft: model.predict_ft_per_hr(
-            standard.heart_rate_bpm, elevation_ft, standard.grade_frac
+            standard.heart_rate_bpm, elevation_ft, standard.grade_frac, standard.running_frac
         ),
     )
     return panel(
         "Vertical rate vs elevation",
-        f"Each climb block moved along the model's slopes to {standard.heart_rate_bpm:.0f} bpm and "
-        f"{standard.grade_frac:.0%} grade, so what's left is elevation; color is the block's real heart rate. The "
-        f"diamond is this effort's rate at standard conditions, at {standard.elevation_ft:,.0f} ft.",
+        f"Each climb block moved through the model to {standard.heart_rate_bpm:.0f} bpm, "
+        f"{standard.grade_frac:.0%} grade and {gait_text(standard.running_frac)}, so what's left is elevation; "
+        "color is the block's real heart rate. The diamond is this effort's rate at standard conditions, at "
+        f"{standard.elevation_ft:,.0f} ft.",
         build,
     )
 

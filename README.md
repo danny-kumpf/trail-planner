@@ -181,7 +181,9 @@ uv run python -m trail_planner.rebuild_training_log
 
 The **Fitness** tab tracks how fast you climb, using a model of climbing rate fit to your recent efforts.
 
-**The model.** On sustained climbs, vertical feet per hour rises steadily with effort. The model is a straight-line fit of climbing rate (ft/hr) against heart rate, elevation and grade. It's fit over every 45 s block of climbing in its efforts. Each block counts for how long it lasted.
+**The model.** On sustained climbs, the energy you spend per second rises steadily with heart rate. So the model works in metabolic power (W/kg) rather than climbing rate. Each 45 s block of climbing gets a power: its speed times what a metre of its terrain costs. That cost depends on grade and gait, and comes from Minetti et al. (2002), who measured it on a treadmill from −45% to +45% grade, walking and running. A block's gait is the share of it the training log's running-vs-hiking judgement calls running (cadence and pace, or pace alone without cadence). The model is a straight-line fit of power against heart rate and elevation, over every block in its efforts. Each block counts for how long it lasted. Every prediction is turned back into a climbing rate for the block's grade and gait, so power never appears on the page.
+
+Why power and not climbing rate: on these efforts, climbing rate rises from 10% to about 20% grade and then levels off, which a straight line in grade can't follow. Minetti's walking cost follows it closely. Compared by leaving each effort out of the fit and predicting it, the power model predicts better than the old rate model. Adding grade as a further term barely changes its predictions, so it isn't one. Above about 25% grade, the model expects about 5% more climbing than these efforts show, and the gap isn't clearly more than noise.
 
 An **effort** is a hike, trail run or race whose recording has heart rate and at least 10 minutes of climbing. Climbing means terrain steeper than 10% that's being climbed at at least 100 ft/hr; slower than that is stopped, not climbing slowly. A climb also has to last at least 90 s, so heart rate has time to catch up with the effort. Grade comes from elevation against distance only, smoothed over 200 m, so stopping on a slope doesn't change it. A stretch where the recording claims more than 6,000 ft/hr up or 8,000 ft/hr down is a GPS fault, not fast climbing, so its rate is treated as unknown. If heart rate starts out reading far too low and then jumps up, as some monitors do, it isn't used until it settles.
 
@@ -191,8 +193,8 @@ An **effort** is a hike, trail run or race whose recording has heart rate and at
 
 **Scores.** Each effort gets two numbers:
 
-- **At standard**: the effort's climbing rate moved along the model's slopes to 150 bpm, 8,000 ft and 15% grade. It answers "how fast was I climbing?" in ft/hr, whatever the terrain and heart rate. The chart above the table plots it over time.
-- **Vs model**: how much more vert the effort climbed than the model predicted for its own heart rate, elevation and grade. An effort in the model is compared with the model fit without it. Otherwise it would partly be compared with itself. ⚠ marks an effort with climbing at elevations that model wasn't fit on, where the comparison extrapolates.
+- **At standard**: the effort's climbing rate moved through the model to 150 bpm, 8,000 ft and 15% grade, hiking. It answers "how fast was I climbing?" in ft/hr, whatever the terrain, heart rate and gait. The chart above the table plots it over time.
+- **Vs model**: how much more vert the effort climbed than the model predicted for its own heart rate, elevation, grade and gait. An effort in the model is compared with the model fit without it. Otherwise it would partly be compared with itself. ⚠ marks an effort with climbing at elevations that model wasn't fit on, where the comparison extrapolates.
 
 **Explore** opens an effort's page:
 
@@ -237,9 +239,9 @@ uv run pytest
 | `trail_planner/strava_api.py` | Strava's API: approving access, refreshing tokens, reading activities |
 | `trail_planner/strava_sync.py` | Brings the training log up to date with Strava |
 | `strava_app.json`, `strava_tokens.json` | Your Strava API application, and the access it was given (keep private) |
-| `trail_planner/climb_signals.py` | Recording → vertical rate, grade and heart rate on an even time grid |
+| `trail_planner/climb_signals.py` | Recording → vertical rate, grade, heart rate and gait on an even time grid |
 | `trail_planner/climb_blocks.py` | Sustained climbs, cut into the 45 s blocks the model is fit on (heart rate lag lives here) |
-| `trail_planner/climb_model.py` | The climbing model: rate from heart rate, elevation and grade |
+| `trail_planner/climb_model.py` | The climbing model: power from heart rate and elevation, turned into a climbing rate by Minetti's cost of grade and gait |
 | `trail_planner/fitness.py` | Which efforts the model uses, each effort's scores, and the stored climb blocks |
 | `trail_planner/fitness_plots.py` | The Fitness tab's figures |
 | `climb_blocks.json` | Each activity's climb blocks, kept so they needn't be recomputed |

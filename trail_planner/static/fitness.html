@@ -89,7 +89,8 @@ function renderModel(fitness) {
   const [low, high] = model.elevation_span_ft;
   card.replaceChildren(
     headline,
-    fitnessEl("p", `Changing by ${modelSlopesText(model)}`),
+    fitnessEl("p", `Changing by ${modelSlopesText(model)}. Grade and gait act through the energy they cost ` +
+                   "per metre (Minetti, 2002)."),
     fitnessEl("p",
       `Fit over ${inModel.length} efforts from ${fmtDate(dates[0])} to ${fmtDate(dates[dates.length - 1])}: ` +
       `${model.num_blocks} climb blocks at ${fmtFt(low)}–${fmtFt(high)}, R² ${model.r_squared.toFixed(2)}.`, "muted"),
@@ -152,9 +153,9 @@ function effortsTable(efforts) {
     ["Date"], ["Effort"], ["Climbing"], ["Avg HR"], ["Elevation"], ["At standard"], ["Vs model"],
     ["In model"], ["Require", "choice-cell"], ["Exclude", "choice-cell"], [""],
   ]) head.append(fitnessEl("th", text, className));
-  head.cells[5].title = "Climbing rate moved along the model's slopes to the standard conditions";
-  head.cells[6].title = "How much more it climbed than the model predicted for its own heart rate, elevation and " +
-                        "grade. Efforts in the model are compared with the model fit without them.";
+  head.cells[5].title = "Climbing rate moved through the model to the standard conditions";
+  head.cells[6].title = "How much more it climbed than the model predicted for its own heart rate, elevation, " +
+                        "grade and gait. Efforts in the model are compared with the model fit without them.";
   const body = table.createTBody();
   for (const effort of efforts) {
     const row = body.insertRow();

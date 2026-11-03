@@ -4,7 +4,13 @@ import numpy as np
 import pytest
 
 from trail_planner.climb_blocks import BLOCK_S, HR_LAG_S, MIN_CLIMB_S, ClimbBlock, climbs_in
-from trail_planner.climb_model import BlockColumns, ClimbConditions, at_conditions_ft_per_hr, fit_climb_model
+from trail_planner.climb_model import (
+    BlockColumns,
+    ClimbConditions,
+    at_conditions_ft_per_hr,
+    fit_climb_model,
+    ft_per_hr_per_w_per_kg,
+)
 from trail_planner.climb_signals import ClimbSignals, climb_signals
 from trail_planner.recording import Recording
 from trail_planner.trail_stats import FT_PER_M
@@ -87,7 +93,9 @@ def test_too_little_elevation():
         climb_signals(Recording(**{**recording.__dict__, "elevation_m": None}))
 
 
-def signals_of(vert_rate_ft_per_hr: np.ndarray, grade_frac: float = 0.15, heart_rate_bpm=None) -> ClimbSignals:
+def signals_of(
+    vert_rate_ft_per_hr: np.ndarray, grade_frac: float = 0.15, heart_rate_bpm=None, is_running=None
+) -> ClimbSignals:
     """Signals on a 1 s grid with the given vertical rate, at a constant grade."""
     n = len(vert_rate_ft_per_hr)
     elevation_ft = 6000 + np.cumsum(vert_rate_ft_per_hr) / 3600
@@ -101,6 +109,7 @@ def signals_of(vert_rate_ft_per_hr: np.ndarray, grade_frac: float = 0.15, heart_
         grade_frac=np.full(n, grade_frac),
         heart_rate_bpm=heart_rate_bpm,
         heart_rate_misread=None if heart_rate_bpm is None else np.zeros(n, dtype=bool),
+        is_running=np.zeros(n, dtype=bool) if is_running is None else is_running,
     )
 
 
@@ -136,37 +145,87 @@ def test_a_block_has_the_heart_rate_its_effort_produced():
     assert analysis.blocks[-1].heart_rate_bpm is None
 
 
-def blocks_following(intercept, per_bpm, per_ft, per_frac, n=40, seed=0, extra_ft_per_hr=0.0) -> list[ClimbBlock]:
+def test_a_block_has_the_share_of_it_that_was_run():
+    climb_s, run_s = 10 * int(BLOCK_S), int(BLOCK_S) // 3
+    is_running = np.arange(climb_s) >= climb_s - run_s
+    analysis = climbs_in(signals_of(np.full(climb_s, 1500.0), is_running=is_running))
+    assert analysis.blocks[0].running_frac == 0
+    assert analysis.blocks[-1].running_frac == pytest.approx(run_s / analysis.blocks[-1].duration_s)
+
+
+def test_running_is_judged_as_the_training_log_judges_it():
+    # Without cadence, pace alone decides: 1 m/s is a hike, 3 m/s a run.
+    signals = climb_signals(heading_north([(600, 1.0, 0.15), (600, 3.0, 0.15)]))
+    assert not signals.is_running[100:500].any()
+    assert signals.is_running[700:1100].all()
+
+
+def blocks_following(intercept_w_per_kg, per_bpm, per_ft, n=40, seed=0, extra_w_per_kg=0.0) -> list[ClimbBlock]:
+    """Blocks at a mix of grades and gaits whose power is a straight line in heart rate and elevation."""
     rng = np.random.default_rng(seed)
     blocks = []
     for _ in range(n):
         heart_rate_bpm = rng.uniform(110, 170)
         elevation_ft = rng.uniform(5000, 13000)
         grade_frac = rng.uniform(0.1, 0.35)
-        vert_rate = intercept + per_bpm * heart_rate_bpm + per_ft * elevation_ft + per_frac * grade_frac
-        blocks.append(ClimbBlock(0.0, rng.uniform(20, 45), vert_rate + extra_ft_per_hr, elevation_ft, grade_frac, heart_rate_bpm))
+        running_frac = rng.choice([0.0, 0.0, 0.5, 1.0])
+        power_w_per_kg = intercept_w_per_kg + per_bpm * heart_rate_bpm + per_ft * elevation_ft + extra_w_per_kg
+        blocks.append(
+            ClimbBlock(
+                start_s=0.0,
+                duration_s=rng.uniform(20, 45),
+                vert_rate_ft_per_hr=power_w_per_kg * float(ft_per_hr_per_w_per_kg(grade_frac, running_frac)),
+                elevation_ft=elevation_ft,
+                grade_frac=grade_frac,
+                heart_rate_bpm=heart_rate_bpm,
+                running_frac=running_frac,
+            )
+        )
     return blocks
 
 
-def test_fit_recovers_a_straight_line_relationship():
-    model = fit_climb_model(blocks_following(-500, 18.0, -0.05, 200.0))
-    assert model.hr_slope_ft_per_hr_per_bpm == pytest.approx(18.0)
-    assert model.elevation_slope_ft_per_hr_per_ft == pytest.approx(-0.05)
-    assert model.grade_slope_ft_per_hr_per_frac == pytest.approx(200.0)
+def test_fit_recovers_a_straight_line_relationship_in_power():
+    model = fit_climb_model(blocks_following(-2.0, 0.06, -0.0002))
+    assert model.intercept_w_per_kg == pytest.approx(-2.0)
+    assert model.hr_slope_w_per_kg_per_bpm == pytest.approx(0.06)
+    assert model.elevation_slope_w_per_kg_per_ft == pytest.approx(-0.0002)
     assert model.r_squared == pytest.approx(1.0)
     assert model.num_blocks == 40
 
 
+def test_climbing_rate_follows_the_cost_of_the_grade_and_gait():
+    model = fit_climb_model(blocks_following(-2.0, 0.06, -0.0002))
+    hiking_ft_per_hr = model.predict_ft_per_hr(150, 8000, [0.10, 0.20], 0.0)
+    # The same power climbs faster on steeper ground, and slower running than hiking.
+    assert hiking_ft_per_hr[1] > hiking_ft_per_hr[0]
+    assert model.predict_ft_per_hr(150, 8000, 0.20, 1.0) < hiking_ft_per_hr[1]
+
+
+def test_the_slopes_are_the_models_line_at_the_given_grade_and_gait():
+    model = fit_climb_model(blocks_following(-2.0, 0.06, -0.0002))
+    conditions = ClimbConditions(heart_rate_bpm=150, elevation_ft=8000, grade_frac=0.15, running_frac=0.0)
+    one_bpm_more = ClimbConditions(heart_rate_bpm=151, elevation_ft=8000, grade_frac=0.15, running_frac=0.0)
+    one_ft_higher = ClimbConditions(heart_rate_bpm=150, elevation_ft=8001, grade_frac=0.15, running_frac=0.0)
+    assert model.hr_slope_ft_per_hr_per_bpm(conditions) == pytest.approx(
+        model.predict_at(one_bpm_more) - model.predict_at(conditions)
+    )
+    assert model.elevation_slope_ft_per_hr_per_ft(conditions) == pytest.approx(
+        model.predict_at(one_ft_higher) - model.predict_at(conditions)
+    )
+
+
 def test_blocks_moved_to_conditions_keep_their_departure_from_the_model():
-    model = fit_climb_model(blocks_following(-500, 18.0, -0.05, 200.0))
-    faster = BlockColumns.of(blocks_following(-500, 18.0, -0.05, 200.0, seed=1, extra_ft_per_hr=100))
-    conditions = ClimbConditions(heart_rate_bpm=150, elevation_ft=8000, grade_frac=0.15)
-    assert np.allclose(at_conditions_ft_per_hr(model, faster, conditions), model.predict_at(conditions) + 100)
+    model = fit_climb_model(blocks_following(-2.0, 0.06, -0.0002))
+    faster = BlockColumns.of(blocks_following(-2.0, 0.06, -0.0002, seed=1, extra_w_per_kg=0.3))
+    conditions = ClimbConditions(heart_rate_bpm=150, elevation_ft=8000, grade_frac=0.15, running_frac=0.0)
+    extra_ft_per_hr = 0.3 * float(ft_per_hr_per_w_per_kg(conditions.grade_frac, conditions.running_frac))
+    assert np.allclose(at_conditions_ft_per_hr(model, faster, conditions), model.predict_at(conditions) + extra_ft_per_hr)
 
 
 def test_fit_needs_enough_blocks_with_heart_rate():
-    blocks = blocks_following(0, 10, 0, 0, n=5)
+    blocks = blocks_following(0.0, 0.05, 0.0, n=5)
     with pytest.raises(ValueError):
-        fit_climb_model(blocks[:3])
+        fit_climb_model(blocks[:2])
+    no_heart_rate = ClimbBlock(0.0, 45.0, 1000.0, 6000.0, 0.2, heart_rate_bpm=None, running_frac=0.0)
     with pytest.raises(ValueError):
-        fit_climb_model([*blocks[:4], ClimbBlock(0.0, 45.0, 1000.0, 6000.0, 0.2, None)])
+        fit_climb_model([*blocks[:3], no_heart_rate])

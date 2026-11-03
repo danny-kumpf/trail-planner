@@ -10,8 +10,9 @@ from trail_planner.effort import (
     ignore_brief_gait_changes,
     slow_running_as_hiking,
     recorded_track_from_recording,
-    split_by_gait,
-    split_by_pace,
+    gait_split,
+    running_steps_by_gait,
+    running_steps_by_pace,
 )
 from trail_planner.recording import recording_from_gpx
 from trail_planner.trail_stats import M_PER_MI
@@ -81,19 +82,19 @@ def test_judging_by_cadence_needs_it_on_nearly_every_step():
     assert one_dropout.has_usable_cadence
     assert not two_dropouts.has_usable_cadence
     with pytest.raises(ValueError, match="cadence"):
-        split_by_gait(two_dropouts)
+        running_steps_by_gait(two_dropouts)
 
 
 def test_a_cadence_dropout_inside_a_run_is_absorbed():
     recorded = track([170] * 10 + [np.nan] + [170] * 10)
-    assert split_by_gait(recorded, min_gait_stretch_s=10).hiking_mi == 0
+    assert gait_split(running_steps_by_gait(recorded, min_gait_stretch_s=10), recorded).hiking_mi == 0
 
 
 def test_read_recorded_track_without_cadence():
     recorded = track_from_gpx_text(gpx_text([None] * 3))
     assert recorded.step_cadence_steps_per_min is None
     with pytest.raises(ValueError, match="cadence"):
-        split_by_gait(recorded)
+        running_steps_by_gait(recorded)
 
 
 def test_heart_rate_is_time_weighted_and_may_have_gaps():
@@ -110,20 +111,20 @@ def test_no_heart_rate():
     assert heart_rate_summary(recorded) is None
 
 
-def test_split_by_pace():
+def test_running_by_pace():
     # 5 s per step: 10 m is 13.4 min/mi, faster than 15; 5 m is 26.8 min/mi.
     recorded = track([0] * 40, step_m=5.0)
     recorded.step_m[10:30] = 10.0
-    split = split_by_pace(recorded, running_pace_min_per_mi=15, min_gait_stretch_s=10)
+    split = gait_split(running_steps_by_pace(recorded, running_pace_min_per_mi=15, min_gait_stretch_s=10), recorded)
     assert split.running_mi == pytest.approx(200 / M_PER_MI)
     assert split.hiking_mi == pytest.approx(100 / M_PER_MI)
 
 
-def test_split_by_pace_absorbs_a_brief_fast_blip():
+def test_running_by_pace_absorbs_a_brief_fast_blip():
     # One step of GPS jitter that looks fast inside a hike.
     recorded = track([0] * 20, step_m=5.0)
     recorded.step_m[10] = 30.0
-    split = split_by_pace(recorded, running_pace_min_per_mi=15, min_gait_stretch_s=10)
+    split = gait_split(running_steps_by_pace(recorded, running_pace_min_per_mi=15, min_gait_stretch_s=10), recorded)
     assert split.running_mi == 0
 
 
@@ -174,16 +175,18 @@ def test_stationary_running_cadence_counts_as_hiking():
     assert not result.any()
 
 
-def test_split_by_gait_needs_running_cadence_and_pace():
+def test_running_by_gait_needs_running_cadence_and_pace():
     # Hike, running cadence at a hiking pace, hike, then a run.
     recorded = track([110] * 20 + [170] * 10 + [110] * 10 + [170] * 20)
     recorded.step_m[20:30] = 2.0
-    split = split_by_gait(recorded, running_threshold_steps_per_min=140, max_running_pace_min_per_mi=20)
+    is_running = running_steps_by_gait(recorded, running_threshold_steps_per_min=140, max_running_pace_min_per_mi=20)
+    split = gait_split(is_running, recorded)
     assert split.running_mi == pytest.approx(200 / M_PER_MI)
     assert split.hiking_mi == pytest.approx(320 / M_PER_MI)
 
 
-def test_split_by_gait_uses_threshold():
-    split = split_by_gait(track([110] * 30 + [170] * 20), running_threshold_steps_per_min=140)
+def test_running_by_gait_uses_threshold():
+    recorded = track([110] * 30 + [170] * 20)
+    split = gait_split(running_steps_by_gait(recorded, running_threshold_steps_per_min=140), recorded)
     assert split.running_mi == pytest.approx(200 / M_PER_MI)
     assert split.hiking_mi == pytest.approx(300 / M_PER_MI)

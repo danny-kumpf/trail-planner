@@ -28,7 +28,7 @@ BLOCK_S = HR_LAG_S
 MIN_PARTIAL_BLOCK_S = BLOCK_S / 2
 # Increase after changing how blocks come out of a recording, here or in climb_signals, so that
 # blocks stored before the change are recomputed.
-CLIMB_ANALYSIS_VERSION = 2
+CLIMB_ANALYSIS_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -52,6 +52,8 @@ class ClimbBlock:
     # Heart rate shifted back by the lag, so it's the one the block's effort produced. None if any
     # of it is missing.
     heart_rate_bpm: float | None
+    # The share of the block that was run rather than hiked.
+    running_frac: float
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,7 @@ def blocks_of(signals: ClimbSignals, climbs: list[ClimbRun]) -> list[ClimbBlock]
                         if block_heart_rate_bpm is not None and not np.isnan(block_heart_rate_bpm).any()
                         else None
                     ),
+                    running_frac=float(np.mean(signals.is_running[block])),
                 )
             )
     return blocks

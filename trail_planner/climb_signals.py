@@ -1,5 +1,5 @@
-"""A recording resampled onto an even time grid, with the vertical rate, grade and heart rate that
-climbs are measured from.
+"""A recording resampled onto an even time grid, with the vertical rate, grade, heart rate and gait
+that climbs are measured from.
 
 Samples arrive irregularly, and a rate from unevenly spaced samples is silently wrong, so every
 channel is resampled onto one grid first. That also makes a smoothing window a real duration.
@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal import savgol_filter
 
+from trail_planner.effort import recorded_track_from_recording, running_steps
 from trail_planner.recording import DEFAULT_MIN_MOVING_SPEED_M_PER_S, Recording
 from trail_planner.trail_stats import FT_PER_M, profile_from_along_track
 
@@ -70,6 +71,8 @@ class ClimbSignals:
     heart_rate_bpm: np.ndarray | None
     # Where the monitor was reading low before it locked on; None if no heart rate was recorded.
     heart_rate_misread: np.ndarray | None
+    # Running rather than hiking, judged as the training log judges it.
+    is_running: np.ndarray
 
     @property
     def sample_interval_s(self) -> float:
@@ -228,6 +231,13 @@ def grade_by_distance(along_track_m: np.ndarray, elevation_m: np.ndarray) -> tup
     return grid_m, np.gradient(smoothed_m, grid_m)
 
 
+def running_on_grid(grid_s: np.ndarray, recording: Recording) -> np.ndarray:
+    """Whether each grid sample falls in a step between recorded samples that was run."""
+    is_running = running_steps(recorded_track_from_recording(recording))
+    step = np.searchsorted(recording.time_s, grid_s, side="right") - 1
+    return is_running[np.clip(step, 0, len(is_running) - 1)]
+
+
 def climb_signals(recording: Recording) -> ClimbSignals:
     """Raises ValueError if the recording has too little elevation to measure climbing by."""
     if recording.elevation_m is None or np.count_nonzero(~np.isnan(recording.elevation_m)) < 2:
@@ -266,4 +276,5 @@ def climb_signals(recording: Recording) -> ClimbSignals:
         grade_frac=np.interp(along_track_on_grid_m, distance_grid_m, grade_on_grid_frac),
         heart_rate_bpm=heart_rate_bpm,
         heart_rate_misread=heart_rate_misread,
+        is_running=running_on_grid(grid_s, recording),
     )

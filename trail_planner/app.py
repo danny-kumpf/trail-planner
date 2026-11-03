@@ -379,9 +379,9 @@ def current_fitness() -> FitnessOverview:
 def climb_model_json(model: ClimbModel) -> dict:
     return {
         "at_standard_ft_per_hr": model.predict_at(STANDARD_CONDITIONS),
-        "hr_slope_ft_per_hr_per_bpm": model.hr_slope_ft_per_hr_per_bpm,
-        "elevation_slope_ft_per_hr_per_ft": model.elevation_slope_ft_per_hr_per_ft,
-        "grade_slope_ft_per_hr_per_frac": model.grade_slope_ft_per_hr_per_frac,
+        # At the standard grade and gait, where the model's line through heart rate and elevation is straight.
+        "hr_slope_ft_per_hr_per_bpm": model.hr_slope_ft_per_hr_per_bpm(STANDARD_CONDITIONS),
+        "elevation_slope_ft_per_hr_per_ft": model.elevation_slope_ft_per_hr_per_ft(STANDARD_CONDITIONS),
         "r_squared": model.r_squared,
         "num_blocks": model.num_blocks,
         "elevation_span_ft": list(model.elevation_span_ft),
@@ -415,6 +415,7 @@ def fitness_context_json(overview: FitnessOverview) -> dict:
             "heart_rate_bpm": STANDARD_CONDITIONS.heart_rate_bpm,
             "elevation_ft": STANDARD_CONDITIONS.elevation_ft,
             "grade_frac": STANDARD_CONDITIONS.grade_frac,
+            "running_frac": STANDARD_CONDITIONS.running_frac,
         },
         "model": None if overview.model is None else climb_model_json(overview.model),
         "no_model_reason": overview.no_model_reason,

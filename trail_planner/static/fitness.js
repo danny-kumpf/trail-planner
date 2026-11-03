@@ -71,16 +71,22 @@ const fmtMinutes = (seconds) => {
 const fmtDate = (isoDateTime) =>
   new Date(isoDateTime).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
-function standardConditionsText(standard) {
-  return `${Math.round(standard.heart_rate_bpm)} bpm, ${fmtFt(standard.elevation_ft)}, ${Math.round(standard.grade_frac * 100)}% grade`;
+function gaitText(runningFrac) {
+  if (runningFrac === 0) return "hiking";
+  if (runningFrac === 1) return "running";
+  return `${Math.round(runningFrac * 100)}% running`;
 }
 
-// The model's slopes, in the units they're easiest to read in.
+function standardConditionsText(standard) {
+  return `${Math.round(standard.heart_rate_bpm)} bpm, ${fmtFt(standard.elevation_ft)}, ` +
+         `${Math.round(standard.grade_frac * 100)}% grade, ${gaitText(standard.running_frac)}`;
+}
+
+// The model's slopes at the standard grade and gait, in the units they're easiest to read in.
 function modelSlopesText(model) {
   return [
     `${fmtSigned(model.hr_slope_ft_per_hr_per_bpm, 1)} ft/hr per bpm`,
     `${fmtSigned(model.elevation_slope_ft_per_hr_per_ft * 1000)} per 1,000 ft`,
-    `${fmtSigned(model.grade_slope_ft_per_hr_per_frac / 100, 1)} per 1% grade`,
   ].join(" · ");
 }
 

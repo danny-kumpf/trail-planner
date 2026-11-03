@@ -2,11 +2,11 @@
 
 An effort is an on-foot activity with at least MIN_EFFORT_CLIMBING_S of climbing with heart rate.
 Each effort is scored two ways:
-- At standard conditions: its climbing moved along the model's slopes to STANDARD_CONDITIONS, so
-  efforts on different terrain and at different heart rates read in the same ft/hr.
+- At standard conditions: its climbing moved through the model to STANDARD_CONDITIONS, so efforts
+  on different terrain, at different heart rates and gaits, read in the same ft/hr.
 - Against the model: how much more it climbed than the model predicted for its own heart rate,
-  elevation and grade. An effort the model is fit from is compared with the model fit without it,
-  or it would partly be compared with itself.
+  elevation, grade and gait. An effort the model is fit from is compared with the model fit
+  without it, or it would partly be compared with itself.
 
 Climb blocks take about half a second per recording to compute, so they're stored in
 climb_blocks.json along with what they were computed from, and recomputed only when that changes.
@@ -38,8 +38,16 @@ MODEL_WINDOW = timedelta(days=60)
 MIN_RECENT_EFFORTS = 5
 # Less climbing than this says too little about an effort to score it.
 MIN_EFFORT_CLIMBING_S = 600.0
-STANDARD_CONDITIONS = ClimbConditions(heart_rate_bpm=150.0, elevation_ft=8000.0, grade_frac=0.15)
-BLOCK_FIELDS = ("start_s", "duration_s", "vert_rate_ft_per_hr", "elevation_ft", "grade_frac", "heart_rate_bpm")
+STANDARD_CONDITIONS = ClimbConditions(heart_rate_bpm=150.0, elevation_ft=8000.0, grade_frac=0.15, running_frac=0.0)
+BLOCK_FIELDS = (
+    "start_s",
+    "duration_s",
+    "vert_rate_ft_per_hr",
+    "elevation_ft",
+    "grade_frac",
+    "heart_rate_bpm",
+    "running_frac",
+)
 
 
 @dataclass(frozen=True)
@@ -78,7 +86,7 @@ class Membership(StrEnum):
 
 @dataclass(frozen=True)
 class EffortScore:
-    # Its climbing moved to STANDARD_CONDITIONS along the model's slopes.
+    # Its climbing moved to STANDARD_CONDITIONS through the model.
     at_standard_ft_per_hr: float
     # How much more it climbed than the comparison model predicted for the same time; None if
     # there are too few other efforts to fit one without it.

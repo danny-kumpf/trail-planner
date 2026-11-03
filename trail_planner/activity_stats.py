@@ -9,10 +9,10 @@ import numpy as np
 
 from trail_planner.effort import (
     DEFAULT_PACE_ONLY_RUNNING_PACE_MIN_PER_MI,
+    gait_split,
     heart_rate_summary,
     recorded_track_from_recording,
-    split_by_gait,
-    split_by_pace,
+    running_steps,
 )
 from trail_planner.recording import Recording, moving_time_s, read_recording
 from trail_planner.trail_stats import FT_PER_M, M_PER_MI, profile_from_along_track, stats_from_profile
@@ -84,8 +84,7 @@ def running_mi(activity_type: ActivityType, recording: Recording) -> float:
     if not activity_type.is_on_foot:
         return 0.0
     track = recorded_track_from_recording(recording)
-    split = split_by_gait(track) if track.has_usable_cadence else split_by_pace(track)
-    return split.running_mi
+    return gait_split(running_steps(track), track).running_mi
 
 
 def running_mi_from_summary(activity_type: ActivityType, distance_mi: float, moving_time_s: float) -> float:

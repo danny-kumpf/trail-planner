@@ -78,14 +78,14 @@ def test_required_efforts_are_in_whatever_their_date():
 
 
 def test_an_effort_in_the_model_is_compared_with_the_model_fit_without_it():
-    usual = effort("usual", 1, blocks=blocks_following(-500, 18.0, -0.05, 200.0))
-    faster = effort("faster", 0, blocks=blocks_following(-500, 18.0, -0.05, 200.0, seed=1, extra_ft_per_hr=200))
+    usual = effort("usual", 1, blocks=blocks_following(-2.0, 0.06, -0.0002))
+    faster = effort("faster", 0, blocks=blocks_following(-2.0, 0.06, -0.0002, seed=1, extra_w_per_kg=0.6))
     efforts = [faster, usual]
     membership = model_membership(efforts)
     full = fitness.fit_climb_model(fitness.model_blocks(efforts, membership))
     without_faster = comparison_model(faster, efforts, membership, full)
-    # Fit on `usual` alone, the model has no trace of the faster effort's extra 200 ft/hr.
-    assert without_faster.predict_ft_per_hr(150, 8000, 0.15) == pytest.approx(-500 + 18 * 150 - 0.05 * 8000 + 30)
+    # Fit on `usual` alone, the model has no trace of the faster effort's extra 0.6 W/kg.
+    assert without_faster.predict_w_per_kg(150, 8000) == pytest.approx(-2.0 + 0.06 * 150 - 0.0002 * 8000)
     assert vs_model_frac(faster, without_faster) > vs_model_frac(faster, full) > 0
 
 
@@ -95,8 +95,8 @@ def heatmap_minutes(panel: dict) -> float:
 
 
 def test_coverage_counts_the_climbing_the_model_is_fit_on():
-    usual = effort("usual", 1, blocks=blocks_following(-500, 18.0, -0.05, 200.0))
-    faster = effort("faster", 0, blocks=blocks_following(-500, 18.0, -0.05, 200.0, seed=1, extra_ft_per_hr=200))
+    usual = effort("usual", 1, blocks=blocks_following(-2.0, 0.06, -0.0002))
+    faster = effort("faster", 0, blocks=blocks_following(-2.0, 0.06, -0.0002, seed=1, extra_w_per_kg=0.6))
     efforts = [faster, usual]
     membership = model_membership(efforts)
     model = fitness.fit_climb_model(fitness.model_blocks(efforts, membership))
