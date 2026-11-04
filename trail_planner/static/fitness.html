@@ -191,7 +191,8 @@ async function load() {
     return;
   }
   const effortDefinition = `hikes, trail runs and races with heart rate and at least ` +
-    `${fmtMinutes(fitness.min_effort_climbing_s)} of climbing steeper than ${Math.round(fitness.climb_floor_grade_frac * 100)}%`;
+    `${fmtMinutes(fitness.min_effort_climbing_s)} of climbing steeper than ${Math.round(fitness.climb_floor_grade_frac * 100)}% ` +
+    `at ${Math.round(fitness.min_modelled_heart_rate_bpm)} bpm or more`;
   $("status").textContent = fitness.efforts.length ? "" : `No efforts yet. Efforts are ${effortDefinition}.`;
   renderModel(fitness);
   $("charts").replaceChildren();

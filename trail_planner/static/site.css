@@ -9,6 +9,9 @@
   --accent: #2f6f4f;
   --accent-text: #ffffff;
   --warn: #9a5b00;
+  /* Row backgrounds for recommended swaps: one that meets the plan's targets, and a close one. */
+  --meets-tint: #e1f0e6;
+  --closest-tint: #f8eccb;
   --page-width: 760px;
 }
 @media (prefers-color-scheme: dark) {
@@ -21,6 +24,8 @@
     --accent: #5fae84;
     --accent-text: #0f1a14;
     --warn: #e0a54a;
+    --meets-tint: #1e3a2a;
+    --closest-tint: #3b3117;
   }
 }
 * { box-sizing: border-box; }

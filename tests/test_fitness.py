@@ -9,7 +9,9 @@ from test_climbing import blocks_following
 from trail_planner import fitness
 from trail_planner.app import app
 from trail_planner.fitness_plots import model_coverage
+from trail_planner.climb_blocks import ClimbBlock
 from trail_planner.fitness import (
+    MIN_MODELLED_HEART_RATE_BPM,
     MIN_RECENT_EFFORTS,
     MODEL_WINDOW,
     Effort,
@@ -18,6 +20,7 @@ from trail_planner.fitness import (
     climb_blocks_by_activity,
     comparison_model,
     model_membership,
+    modelled_blocks,
     vs_model_frac,
 )
 from trail_planner.training_log import ModelChoice, activity_from_entry, load_activities, set_manual, set_model_choice
@@ -44,6 +47,14 @@ def effort(activity_id: str, days_before_latest: float, choice: ModelChoice | No
 
 
 WINDOW_DAYS = MODEL_WINDOW.days
+
+
+def test_only_blocks_at_a_high_enough_heart_rate_are_modelled():
+    def block(heart_rate_bpm):
+        return ClimbBlock(0.0, 45.0, 1500.0, 8000.0, 0.15, heart_rate_bpm, 0.0)
+
+    easy, at_floor, hard = block(MIN_MODELLED_HEART_RATE_BPM - 1), block(MIN_MODELLED_HEART_RATE_BPM), block(150.0)
+    assert modelled_blocks([easy, block(None), at_floor, hard]) == [at_floor, hard]
 
 
 def test_model_is_fit_from_the_window_before_the_latest_effort():

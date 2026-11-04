@@ -16,7 +16,7 @@ from trail_planner.recording import Recording
 # is a typical value. A different heart rate monitor may lag differently; revisit it after a change.
 HR_LAG_S = 45.0
 # Climbing is terrain at least this steep...
-CLIMB_FLOOR_GRADE_FRAC = 0.10
+CLIMB_FLOOR_GRADE_FRAC = 0.05
 # ...being climbed at least this fast. Slower is stopped (fiddling with a pack, refilling water),
 # not climbing slowly. Measured as height gained, as horizontal speed falls as terrain steepens.
 MIN_CLIMBING_FT_PER_HR = 100.0
@@ -28,7 +28,7 @@ BLOCK_S = HR_LAG_S
 MIN_PARTIAL_BLOCK_S = BLOCK_S / 2
 # Increase after changing how blocks come out of a recording, here or in climb_signals, so that
 # blocks stored before the change are recomputed.
-CLIMB_ANALYSIS_VERSION = 3
+CLIMB_ANALYSIS_VERSION = 4
 
 
 @dataclass(frozen=True)

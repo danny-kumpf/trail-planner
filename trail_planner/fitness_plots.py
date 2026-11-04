@@ -19,7 +19,13 @@ from plotly.subplots import make_subplots
 from trail_planner.climb_blocks import CLIMB_FLOOR_GRADE_FRAC, ClimbAnalysis, ClimbRun
 from trail_planner.climb_model import BlockColumns, ClimbModel, ft_per_hr_per_w_per_kg
 from trail_planner.climb_signals import true_runs
-from trail_planner.fitness import STANDARD_CONDITIONS, Effort, FitnessOverview
+from trail_planner.fitness import (
+    MIN_MODELLED_HEART_RATE_BPM,
+    STANDARD_CONDITIONS,
+    Effort,
+    FitnessOverview,
+    modelled_blocks,
+)
 
 M_PER_KM = 1000.0
 # Lines are thinned to about this many points; more only slows the page.
@@ -456,7 +462,7 @@ def block_steps(blocks: BlockColumns, start_min: np.ndarray, values: np.ndarray)
 
 
 def predicted_vs_actual(analysis: ClimbAnalysis, comparison: ClimbModel, compared_without_effort: bool) -> dict:
-    blocks = [b for b in analysis.blocks if b.heart_rate_bpm is not None]
+    blocks = modelled_blocks(analysis.blocks)
     columns = BlockColumns.of(blocks)
     start_min = minutes_of(analysis, [b.start_s for b in blocks])
     predicted = comparison.predict_blocks_ft_per_hr(columns)
@@ -522,7 +528,9 @@ def predicted_vs_actual(analysis: ClimbAnalysis, comparison: ClimbModel, compare
     )
     return panel(
         "Predicted vs climbed",
-        "Each climb block's vertical rate, against what " + model_note + " predicts for the block's heart rate, "
+        f"Each climb block's vertical rate at {MIN_MODELLED_HEART_RATE_BPM:.0f} bpm or more, against what "
+        + model_note
+        + " predicts for the block's heart rate, "
         "elevation, grade and gait. Below, green blocks climbed faster than predicted and orange ones slower.",
         build,
     )

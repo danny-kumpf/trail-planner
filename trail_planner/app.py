@@ -19,6 +19,7 @@ from trail_planner.climb_model import ClimbModel
 from trail_planner.fitness import (
     DEFAULT_CLIMB_BLOCKS_PATH,
     MIN_EFFORT_CLIMBING_S,
+    MIN_MODELLED_HEART_RATE_BPM,
     MIN_RECENT_EFFORTS,
     MODEL_WINDOW,
     STANDARD_CONDITIONS,
@@ -46,6 +47,7 @@ from trail_planner.planner import (
     PlanResult,
     shuffle_plan,
 )
+from trail_planner.swaps import SwapOption, swap_options
 from trail_planner.trails import DEFAULT_GPX_DIR, DEFAULT_TRAILS_PATH, Trail, load_trails
 from trail_planner.update_trails import update_trails
 from trail_planner.strava_api import (
@@ -118,6 +120,13 @@ def trail_json(trail: Trail) -> dict:
         "vert_ft": trail.vert_ft,
         "runnable_mi": trail.runnable_mi,
     }
+
+
+def trail_from_json(body) -> Trail:
+    """The trail `body` describes, as trail_json writes it. Raises KeyError, TypeError or ValueError if it's invalid."""
+    if not isinstance(body["name"], str):
+        raise TypeError("trail name must be a string")
+    return Trail(body["name"], float(body["distance_mi"]), float(body["vert_ft"]), float(body["runnable_mi"]))
 
 
 def plan_json(plan: Plan) -> dict:
@@ -261,6 +270,34 @@ def plan():
     except (KeyError, TypeError, ValueError) as e:
         return jsonify(error=str(e)), 400
     return jsonify(result_json(result))
+
+
+def swap_option_json(option: SwapOption) -> dict:
+    return {
+        "trail": trail_json(option.trail),
+        "plan": plan_json(option.plan),
+        "recommendation": None if option.recommendation is None else option.recommendation.value,
+    }
+
+
+@app.post("/api/plan/swap-options")
+def plan_swap_options():
+    """The trails that could replace one outing of a plan, given the settings it was shuffled with
+    (`request`), its `trails` as shown, and the `outing_index` to replace. Each comes with the plan
+    the swap makes and whether it's recommended."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="body must be an object"), 400
+    try:
+        plan_request = plan_request_from_json(body["request"])
+        if not isinstance(body["trails"], list):
+            raise TypeError("trails must be a list")
+        plan = Plan(tuple(trail_from_json(t) for t in body["trails"]), plan_request.target_vert_ft)
+        catalog = load_trails(app.config["TRAILS_PATH"]).complete
+        options = swap_options(plan, int(body["outing_index"]), catalog, plan_request)
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(options=[swap_option_json(option) for option in options])
 
 
 def week_plan_json(week_plan: WeekPlan) -> dict:
@@ -431,6 +468,7 @@ def fitness_summary():
         min_recent_efforts=MIN_RECENT_EFFORTS,
         min_effort_climbing_s=MIN_EFFORT_CLIMBING_S,
         climb_floor_grade_frac=CLIMB_FLOOR_GRADE_FRAC,
+        min_modelled_heart_rate_bpm=MIN_MODELLED_HEART_RATE_BPM,
         efforts=[effort_json(e, overview) for e in overview.efforts],
         num_unreadable=len(overview.unreadable),
         trend=None if overview.model is None else fitness_trend(overview),

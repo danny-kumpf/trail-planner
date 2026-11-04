@@ -1,7 +1,7 @@
 """Climbing fitness: a climbing model kept up to date from recent efforts, and how each effort compares.
 
-An effort is an on-foot activity with at least MIN_EFFORT_CLIMBING_S of climbing with heart rate.
-Each effort is scored two ways:
+An effort is an on-foot activity with at least MIN_EFFORT_CLIMBING_S of climbing the model covers:
+climbing with a heart rate of at least MIN_MODELLED_HEART_RATE_BPM. Each effort is scored two ways:
 - At standard conditions: its climbing moved through the model to STANDARD_CONDITIONS, so efforts
   on different terrain, at different heart rates and gaits, read in the same ft/hr.
 - Against the model: how much more it climbed than the model predicted for its own heart rate,
@@ -38,6 +38,10 @@ MODEL_WINDOW = timedelta(days=60)
 MIN_RECENT_EFFORTS = 5
 # Less climbing than this says too little about an effort to score it.
 MIN_EFFORT_CLIMBING_S = 600.0
+# Climbing at a lower heart rate is too easy to be worth modelling, and noisy: there, the model's
+# straight line in heart rate predicted 20-40% too little climbing. It's left out of the model and
+# the scores.
+MIN_MODELLED_HEART_RATE_BPM = 120.0
 STANDARD_CONDITIONS = ClimbConditions(heart_rate_bpm=150.0, elevation_ft=8000.0, grade_frac=0.15, running_frac=0.0)
 BLOCK_FIELDS = (
     "start_s",
@@ -53,7 +57,7 @@ BLOCK_FIELDS = (
 @dataclass(frozen=True)
 class Effort:
     activity: Activity
-    # Only the blocks with a heart rate.
+    # Only the blocks the model covers.
     blocks: list[ClimbBlock]
 
     @property
@@ -112,6 +116,11 @@ class FitnessOverview:
 
     def comparison_model(self, effort: Effort) -> ClimbModel | None:
         return comparison_model(effort, self.efforts, self.membership, self.model)
+
+
+def modelled_blocks(blocks: list[ClimbBlock]) -> list[ClimbBlock]:
+    """The blocks the model covers: those with a heart rate of at least MIN_MODELLED_HEART_RATE_BPM."""
+    return [b for b in blocks if b.heart_rate_bpm is not None and b.heart_rate_bpm >= MIN_MODELLED_HEART_RATE_BPM]
 
 
 # ---- Stored climb blocks ----
@@ -254,7 +263,7 @@ def fitness_overview(log_path: Path, activity_files_dir: Path, store_path: Path)
             effort
             for activity in candidates
             if activity.id in blocks
-            and (effort := Effort(activity, [b for b in blocks[activity.id] if b.heart_rate_bpm is not None])).climbing_s
+            and (effort := Effort(activity, modelled_blocks(blocks[activity.id]))).climbing_s
             >= MIN_EFFORT_CLIMBING_S
         ),
         key=lambda e: e.activity.start_local,

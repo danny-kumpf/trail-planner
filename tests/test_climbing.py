@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pytest
 
-from trail_planner.climb_blocks import BLOCK_S, HR_LAG_S, MIN_CLIMB_S, ClimbBlock, climbs_in
+from trail_planner.climb_blocks import BLOCK_S, CLIMB_FLOOR_GRADE_FRAC, HR_LAG_S, MIN_CLIMB_S, ClimbBlock, climbs_in
 from trail_planner.climb_model import (
     BlockColumns,
     ClimbConditions,
@@ -122,7 +122,7 @@ def test_a_stop_splits_a_climb_and_brief_climbs_arent_modelled():
 
 
 def test_shallow_terrain_isnt_climbing():
-    assert climbs_in(signals_of(np.full(600, 1500.0), grade_frac=0.05)).climbs == []
+    assert climbs_in(signals_of(np.full(600, 1500.0), grade_frac=CLIMB_FLOOR_GRADE_FRAC - 0.01)).climbs == []
 
 
 def test_blocks_cut_each_climb_and_keep_a_long_enough_remainder():

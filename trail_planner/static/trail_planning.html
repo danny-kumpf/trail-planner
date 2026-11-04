@@ -44,6 +44,9 @@
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); }
   th:first-child, td:first-child { text-align: left; }
+  td:not(:first-child) { white-space: nowrap; }
+  /* Swap mode adds columns; on a narrow screen the table scrolls rather than the page. */
+  #included { overflow-x: auto; }
   th { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
   tfoot td { font-weight: 600; border-bottom: none; }
   .summary { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 12px; color: var(--muted); }
@@ -83,6 +86,40 @@
   .update-button:disabled { opacity: 0.6; cursor: progress; }
   .update-status { margin-left: 8px; font-weight: normal; font-size: 0.85rem; }
   .choice-summary { margin-left: 8px; font-weight: normal; font-size: 0.85rem; }
+  th.swap-cell, td.swap-cell { text-align: center; white-space: nowrap; }
+  .swap-button, .swap-in-button {
+    font: inherit;
+    font-size: 0.85rem;
+    color: var(--accent);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1px 8px;
+    cursor: pointer;
+  }
+  .swap-button:hover, .swap-in-button:hover { border-color: var(--accent); }
+  tr.swapping-out td { background: var(--surface); font-weight: 600; }
+  tr.swapping-out .swap-button { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  tr.swap-meets td { background: var(--meets-tint); }
+  tr.swap-closest td { background: var(--closest-tint); }
+  .current-outing { color: var(--muted); font-size: 0.85rem; }
+  .swap-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+    margin-bottom: 8px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.9rem;
+  }
+  .swap-banner[hidden] { display: none; }
+  .swap-banner.warn { color: var(--warn); }
+  .swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 3px; vertical-align: -0.1em; border: 1px solid var(--muted); }
+  .swatch.meets { background: var(--meets-tint); }
+  .swatch.closest { background: var(--closest-tint); }
 </style>
 </head>
 <body>
@@ -128,6 +165,10 @@
       <button type="button" class="update-button" id="update-trails" title="Re-read the GPX files">⟳ Update</button>
       <span class="update-status" id="update-status"></span>
     </summary>
+    <div class="swap-banner" id="swap-banner" hidden>
+      <span id="swap-banner-text"></span>
+      <button type="button" class="swap-in-button" id="cancel-swap">Cancel swap</button>
+    </div>
     <div id="included">Loading…</div>
   </details>
 
@@ -151,19 +192,20 @@ function el(tag, text, className) {
   return node;
 }
 
-// Each extra column is {header, className, cell: (trail) => <td>}, added after the stats.
+// Each extra column is {header, className, cell: (trail, index) => <td>}, added after the stats;
+// `index` is the trail's position in `trails`.
 function trailsTable(trails, extraColumns = []) {
   const table = el("table");
   const head = table.createTHead().insertRow();
   for (const h of ["Trail", "Vert", "Distance", "Runnable"]) head.append(el("th", h));
   for (const column of extraColumns) head.append(el("th", column.header, column.className));
   const body = table.createTBody();
-  for (const t of trails) {
+  trails.forEach((t, i) => {
     const row = body.insertRow();
     row.append(el("td", prettyName(t.name)), el("td", fmtFt(t.vert_ft)),
                el("td", fmtMi(t.distance_mi)), el("td", fmtMi(t.runnable_mi)),
-               ...extraColumns.map((column) => column.cell(t)));
-  }
+               ...extraColumns.map((column) => column.cell(t, i)));
+  });
   return table;
 }
 
@@ -215,17 +257,40 @@ function choiceColumn(header, choice) {
 }
 
 function includedTable(trails) {
-  const table = trailsTable(trails, [choiceColumn("Require", Choice.require), choiceColumn("Exclude", Choice.exclude)]);
-  trails.forEach((t, i) => showChoice(table.tBodies[0].rows[i], t.name));
+  const columns = [choiceColumn("Require", Choice.require), choiceColumn("Exclude", Choice.exclude)];
+  if (swap) columns.push(...swapInColumns());
+  const table = trailsTable(trails, columns);
+  trails.forEach((t, i) => {
+    const row = table.tBodies[0].rows[i];
+    showChoice(row, t.name);
+    const recommendation = swap?.options.get(t.name)?.recommendation;
+    if (recommendation) row.classList.add(recommendationClass[recommendation]);
+  });
   return table;
 }
 
+const swapOutColumn = {
+  header: "",
+  className: "swap-cell",
+  cell(trail, outingIndex) {
+    const button = el("button", "⇄", "swap-button");
+    button.type = "button";
+    button.title = `Swap out ${prettyName(trail.name)}`;
+    button.setAttribute("aria-label", button.title);
+    button.addEventListener("click", () => toggleSwap(outingIndex));
+    const td = el("td", undefined, "swap-cell");
+    td.append(button);
+    return td;
+  },
+};
+
 function planTable(plan) {
-  const table = trailsTable(plan.trails);
+  const table = trailsTable(plan.trails, [swapOutColumn]);
+  table.classList.add("plan-table");
   const foot = table.createTFoot().insertRow();
   foot.append(el("td", `Total (${plan.trails.length} outing${plan.trails.length === 1 ? "" : "s"})`),
               el("td", fmtFt(plan.total_vert_ft)), el("td", fmtMi(plan.total_distance_mi)),
-              el("td", fmtMi(plan.total_runnable_mi)));
+              el("td", fmtMi(plan.total_runnable_mi)), el("td"));
   return table;
 }
 
@@ -241,31 +306,46 @@ function planSummary(plan, targetRunningMi) {
   return summary;
 }
 
-// A plan shuffled with `settings`, which are saved along with it.
-function shuffledPlan(plan, settings) {
-  return [planTable(plan), planSummary(plan, settings.target_running_mi), saveRow(plan, settings)];
+// ---- The plan on display ----
+// {plan, settings}: the plan on display and the settings it was shuffled with, which are saved along
+// with it. Swapping an outing replaces `plan`. Null while no plan is shown.
+let shownPlan = null;
+
+// Show `plan` after the nodes in `lead`; `savable` adds the button that saves it for the week.
+function showPlan(plan, settings, { lead = [], savable }) {
+  shownPlan = { plan, settings };
+  endSwap();
+  $("result").replaceChildren(...lead, planTable(plan), planSummary(plan, settings.target_running_mi),
+                              ...(savable ? [saveRow(plan, settings)] : []));
+}
+
+// Show `message` where the plan goes, when there's no plan to show.
+function showNoPlan(message) {
+  shownPlan = null;
+  endSwap();
+  $("result").replaceChildren(message);
 }
 
 // `settings` is the request body the result was shuffled with.
 function renderResult(result, settings) {
-  const out = $("result");
-  out.replaceChildren();
   switch (result.status) {
     case "found":
-      out.append(...shuffledPlan(result.plan, settings));
+      showPlan(result.plan, settings, { savable: true });
       break;
     case "no_plan_in_tolerance":
-      out.append(el("p", "No plan lands within the vert tolerance. " +
-                    `Recommended tolerance: ${(result.recommended_tolerance_frac * 100).toFixed(1)}% ` +
-                    `(${result.num_plans_at_recommended} option${result.num_plans_at_recommended === 1 ? "" : "s"}). ` +
-                    "Closest plan with enough runnable miles:", "status warn"),
-                 ...shuffledPlan(result.closest, settings));
+      showPlan(result.closest, settings, {
+        lead: [el("p", "No plan lands within the vert tolerance. " +
+                  `Recommended tolerance: ${(result.recommended_tolerance_frac * 100).toFixed(1)}% ` +
+                  `(${result.num_plans_at_recommended} option${result.num_plans_at_recommended === 1 ? "" : "s"}). ` +
+                  "Closest plan with enough runnable miles:", "status warn")],
+        savable: true,
+      });
       break;
     case "not_enough_runnable":
-      out.append(el("p", `Not enough runnable miles: the most any plan in this outing range offers is ${fmtMi(result.max_runnable_mi)}.`, "status warn"));
+      showNoPlan(el("p", `Not enough runnable miles: the most any plan in this outing range offers is ${fmtMi(result.max_runnable_mi)}.`, "status warn"));
       break;
     case "no_combinations":
-      out.append(el("p", "Too few non-excluded trails with complete data to fill any outing count in this range.", "status warn"));
+      showNoPlan(el("p", "Too few non-excluded trails with complete data to fill any outing count in this range.", "status warn"));
       break;
   }
 }
@@ -307,7 +387,7 @@ $("plan-form").addEventListener("submit", async (event) => {
   });
   const result = await response.json();
   if (!response.ok) {
-    $("result").replaceChildren(el("p", result.error, "status warn"));
+    showNoPlan(el("p", result.error, "status warn"));
     return;
   }
   renderResult(result, settings);
@@ -392,6 +472,121 @@ function rememberedSettings() {
 
 $("plan-form").addEventListener("input", rememberSettings);
 
+// ---- Swapping an outing ----
+// While a trail is being chosen to swap into the shown plan: the index of the outing being swapped
+// out, and the server's option for each trail that could replace it, by trail name. Null otherwise.
+let swap = null;
+
+const recommendationClass = { meets_criteria: "swap-meets", closest: "swap-closest" };
+
+// The Included Trails columns for choosing a swap: the plan's vert vs target after each one, and
+// the button that makes it.
+function swapInColumns() {
+  const swappedOutName = shownPlan.plan.trails[swap.outingIndex].name;
+  return [
+    {
+      header: "Vert vs target",
+      className: "swap-cell",
+      cell(trail) {
+        const option = swap.options.get(trail.name);
+        return el("td", option ? fmtPct(option.plan.vert_error_frac) : "", "swap-cell");
+      },
+    },
+    {
+      header: "",
+      className: "swap-cell",
+      cell(trail) {
+        const td = el("td", undefined, "swap-cell");
+        const option = swap.options.get(trail.name);
+        if (option) {
+          const button = el("button", "Swap in", "swap-in-button");
+          button.type = "button";
+          button.addEventListener("click", () => chooseSwap(option));
+          td.append(button);
+        } else if (trail.name === swappedOutName) {
+          td.append(el("span", "Current", "current-outing"));
+        }
+        return td;
+      },
+    },
+  ];
+}
+
+function showSwapBanner(content, isWarning) {
+  $("swap-banner-text").replaceChildren(...content);
+  $("swap-banner").className = "swap-banner" + (isWarning ? " warn" : "");
+  $("swap-banner").hidden = false;
+}
+
+function markSwappingOut() {
+  const table = $("result").querySelector("table.plan-table");
+  if (!table) return;
+  [...table.tBodies[0].rows].forEach((row, i) => row.classList.toggle("swapping-out", i === swap?.outingIndex));
+}
+
+// Show Included Trails, drawn for the current swap, and scroll to it.
+function revealIncluded() {
+  const details = $("included-details");
+  // Opening it reloads the catalog, which draws the table.
+  if (details.open) drawIncluded();
+  else details.open = true;
+  details.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Start choosing a trail to swap in for the shown plan's outing at `outingIndex`, or stop if that
+// outing is the one already being swapped.
+async function toggleSwap(outingIndex) {
+  if (swap?.outingIndex === outingIndex) {
+    endSwap();
+    return;
+  }
+  const requestedFor = shownPlan;
+  const showProblem = (text) => {
+    endSwap();
+    showSwapBanner([text], true);
+    revealIncluded();
+  };
+  let response, result;
+  try {
+    response = await fetch("/api/plan/swap-options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request: requestedFor.settings, trails: requestedFor.plan.trails, outing_index: outingIndex }),
+    });
+    result = await response.json();
+  } catch {
+    if (shownPlan === requestedFor) showProblem("Couldn't reach the server.");
+    return;
+  }
+  if (shownPlan !== requestedFor) return;  // Another plan was shown while the options loaded.
+  if (!response.ok) {
+    showProblem(result.error);
+    return;
+  }
+  swap = { outingIndex, options: new Map(result.options.map((option) => [option.trail.name, option])) };
+  markSwappingOut();
+  const swatch = (kind) => el("span", undefined, `swatch ${kind}`);
+  showSwapBanner([`Swapping out outing ${outingIndex + 1}, `, el("strong", prettyName(shownPlan.plan.trails[outingIndex].name)),
+                  ". ", swatch("meets"), " still meets your targets  ", swatch("closest"), " next closest"], false);
+  revealIncluded();
+}
+
+function endSwap() {
+  $("swap-banner").hidden = true;
+  if (swap === null) return;
+  swap = null;
+  markSwappingOut();
+  drawIncluded();
+}
+
+function chooseSwap(option) {
+  // No lead: whatever was said above the plan, that it's the saved one or the closest, no longer holds.
+  showPlan(option.plan, shownPlan.settings, { savable: true });
+  $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+$("cancel-swap").addEventListener("click", endSwap);
+
 // ---- Restoring the page ----
 
 // The week's saved plan, or null if it has none or it couldn't be loaded.
@@ -399,7 +594,7 @@ async function loadSavedPlan() {
   const response = await fetch(weekUrl);
   if (response.status === 404) return null;
   if (!response.ok) {
-    $("result").replaceChildren(el("p", `Couldn't load the plan saved for ${weekPhrase}.`, "status warn"));
+    showNoPlan(el("p", `Couldn't load the plan saved for ${weekPhrase}.`, "status warn"));
     return null;
   }
   return response.json();
@@ -409,12 +604,17 @@ async function loadSavedPlan() {
 // the week, else the ones its saved plan was shuffled with, else the defaults.
 async function restorePage() {
   const saved = await loadSavedPlan();
-  if (saved) {
-    $("result").replaceChildren(el("p", `Saved plan for ${weekPhrase}:`, "status"),
-                                planTable(saved.plan), planSummary(saved.plan, saved.request.target_running_mi));
-  }
+  if (saved) showPlan(saved.plan, saved.request, { lead: [el("p", `Saved plan for ${weekPhrase}:`, "status")], savable: false });
   const settings = rememberedSettings() ?? saved?.request;
   if (settings) applySettings(settings);
+}
+
+// The plannable trails, as last loaded; null until they are.
+let catalogTrails = null;
+
+function drawIncluded() {
+  if (catalogTrails === null) return;
+  $("included").replaceChildren(catalogTrails.length ? includedTable(catalogTrails) : el("p", "None", "excluded"));
 }
 
 async function loadCatalog() {
@@ -423,7 +623,8 @@ async function loadCatalog() {
   const plannableNames = new Set(catalog.complete.map((t) => t.name));
   for (const name of trailChoices.keys()) if (!plannableNames.has(name)) trailChoices.delete(name);
   renderChoiceSummary();
-  $("included").replaceChildren(catalog.complete.length ? includedTable(catalog.complete) : el("p", "None", "excluded"));
+  catalogTrails = catalog.complete;
+  drawIncluded();
   $("excluded-section").hidden = !catalog.incomplete_names.length;
   $("excluded").textContent = catalog.incomplete_names.map(prettyName).join(", ");
 }
@@ -463,9 +664,10 @@ $("update-trails").addEventListener("click", (event) => {
 $("plan-heading").textContent = `Plan for ${weekPhrase}`;
 // Settings first, so their trail choices are in place when the catalog's table is drawn.
 restorePage().finally(loadCatalog);
-// Reload when expanded, so trails processed since the page loaded show up.
+// Reload when expanded, so trails processed since the page loaded show up. Collapsing it stops a swap.
 $("included-details").addEventListener("toggle", (event) => {
   if (event.target.open) loadCatalog();
+  else endSwap();
 });
 </script>
 </body>
