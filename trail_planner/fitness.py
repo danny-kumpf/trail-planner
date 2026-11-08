@@ -250,7 +250,9 @@ def effort_score(effort: Effort, model: ClimbModel, comparison: ClimbModel | Non
     )
 
 
-def fitness_overview(log_path: Path, activity_files_dir: Path, store_path: Path) -> FitnessOverview:
+def log_efforts(log_path: Path, activity_files_dir: Path, store_path: Path) -> tuple[list[Effort], dict[str, str]]:
+    """Every effort in the training log, newest first; and the activities whose recordings
+    couldn't be analysed, with why."""
     entries = read_log(log_path)
     candidates = [
         activity
@@ -269,6 +271,11 @@ def fitness_overview(log_path: Path, activity_files_dir: Path, store_path: Path)
         key=lambda e: e.activity.start_local,
         reverse=True,
     )
+    return efforts, unreadable
+
+
+def fitness_overview(log_path: Path, activity_files_dir: Path, store_path: Path) -> FitnessOverview:
+    efforts, unreadable = log_efforts(log_path, activity_files_dir, store_path)
     membership = model_membership(efforts)
     try:
         model = fit_climb_model(model_blocks(efforts, membership))

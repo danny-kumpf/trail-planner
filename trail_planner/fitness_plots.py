@@ -16,7 +16,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from trail_planner.climb_blocks import CLIMB_FLOOR_GRADE_FRAC, ClimbAnalysis, ClimbRun
+from trail_planner.climb_blocks import CLIMB_FLOOR_GRADE_FRAC, ClimbAnalysis, ClimbRun, heart_rate_after_lag
 from trail_planner.climb_model import BlockColumns, ClimbModel, ft_per_hr_per_w_per_kg
 from trail_planner.climb_signals import true_runs
 from trail_planner.fitness import (
@@ -232,6 +232,8 @@ class ClimbSummary:
     vert_rate_ft_per_hr: float
     start_elevation_ft: float
     end_elevation_ft: float
+    # Shifted back by the lag, as the model sees it. None if none of it was recorded.
+    heart_rate_bpm: float | None
 
     @property
     def duration_min(self) -> float:
@@ -242,9 +244,15 @@ class ClimbSummary:
         return (self.start_min + self.end_min) / 2
 
 
+def mean_recorded(values: np.ndarray) -> float | None:
+    recorded = values[~np.isnan(values)]
+    return float(np.mean(recorded)) if len(recorded) else None
+
+
 def climb_summaries(analysis: ClimbAnalysis) -> list[ClimbSummary]:
     signals = analysis.signals
     minutes = minutes_of(analysis, signals.time_s)
+    heart_rate_bpm = heart_rate_after_lag(signals)
     return [
         ClimbSummary(
             start_min=float(minutes[c.start]),
@@ -252,6 +260,7 @@ def climb_summaries(analysis: ClimbAnalysis) -> list[ClimbSummary]:
             vert_rate_ft_per_hr=float(np.mean(signals.vert_rate_ft_per_hr[c.start : c.stop])),
             start_elevation_ft=float(signals.elevation_ft[c.start]),
             end_elevation_ft=float(signals.elevation_ft[c.stop - 1]),
+            heart_rate_bpm=None if heart_rate_bpm is None else mean_recorded(heart_rate_bpm[c.start : c.stop]),
         )
         for c in analysis.climbs
     ]
@@ -275,6 +284,10 @@ def labelled_climbs(summaries: list[ClimbSummary], span_min: float) -> list[Clim
     return chosen
 
 
+def heart_rate_text(summary: ClimbSummary) -> str:
+    return "no heart rate" if summary.heart_rate_bpm is None else f"{summary.heart_rate_bpm:.0f} bpm"
+
+
 def add_climb_averages(figure: go.Figure, analysis: ClimbAnalysis, theme: Theme, row: int) -> None:
     """A bar at each climb's average vertical rate, labelled where there's room."""
     summaries = climb_summaries(analysis)
@@ -289,7 +302,7 @@ def add_climb_averages(figure: go.Figure, analysis: ClimbAnalysis, theme: Theme,
     for s in summaries:
         x += [s.start_min, s.end_min, None]
         y += [s.vert_rate_ft_per_hr, s.vert_rate_ft_per_hr, None]
-        meta += [[s.start_elevation_ft, s.end_elevation_ft, s.duration_min]] * 2 + [None]
+        meta += [[s.start_elevation_ft, s.end_elevation_ft, s.duration_min, heart_rate_text(s)]] * 2 + [None]
     figure.add_trace(
         go.Scatter(
             x=x,
@@ -301,7 +314,7 @@ def add_climb_averages(figure: go.Figure, analysis: ClimbAnalysis, theme: Theme,
             customdata=meta,
             hovertemplate=(
                 "climb average %{y:,.0f} ft/hr<br>%{customdata[0]:,.0f} → %{customdata[1]:,.0f} ft"
-                " over %{customdata[2]:.1f} min<extra></extra>"
+                " over %{customdata[2]:.1f} min<br>%{customdata[3]}<extra></extra>"
             ),
         ),
         row=row,
@@ -310,19 +323,22 @@ def add_climb_averages(figure: go.Figure, analysis: ClimbAnalysis, theme: Theme,
     minutes = minutes_of(analysis, analysis.signals.time_s)
     labelled = labelled_climbs(summaries, float(minutes[-1] - minutes[0]))
     if labelled:
-        # Lifted clear of the bar, or the label's second line lands on it.
-        offset = 0.07 * float(np.nanmax(analysis.signals.vert_rate_ft_per_hr) - np.nanmin(analysis.signals.vert_rate_ft_per_hr))
+        # Hung below the bar, where the descents leave room, and dropped clear of the bar's width.
+        offset = 0.03 * float(np.nanmax(analysis.signals.vert_rate_ft_per_hr) - np.nanmin(analysis.signals.vert_rate_ft_per_hr))
         figure.add_trace(
             go.Scatter(
                 x=[s.mid_min for s in labelled],
-                y=[s.vert_rate_ft_per_hr + offset for s in labelled],
+                y=[s.vert_rate_ft_per_hr - offset for s in labelled],
                 mode="text",
                 text=[
                     f"{s.vert_rate_ft_per_hr:,.0f} ft/hr<br>{s.start_elevation_ft / 1000:.1f}–{s.end_elevation_ft / 1000:.1f}k"
+                    f"<br>{heart_rate_text(s)}"
                     for s in labelled
                 ],
-                textposition="top center",
+                textposition="bottom center",
                 textfont=dict(color=theme.text, size=10),
+                # A climb with no descent after it has no room below; drawn past the axis, not cut off.
+                cliponaxis=False,
                 showlegend=False,
                 hoverinfo="skip",
             ),
@@ -430,8 +446,8 @@ def track_overview(analysis: ClimbAnalysis) -> dict:
     caption = (
         f"Climbs steeper than {CLIMB_FLOOR_GRADE_FRAC:.0%} are shaded blue: {len(analysis.climbs)} long enough to "
         f"model, and {len(analysis.short_climbs)} in grey too brief for heart rate to catch up. Each modelled climb "
-        "has a bar at its average vertical rate; the widest are labelled with it and the elevations they span, and "
-        "hovering any bar shows the same."
+        "has a bar at its average vertical rate; the widest are labelled with it, the elevations they span and the "
+        "average heart rate, taken from a little later to allow for its lag, and hovering any bar shows the same."
     )
     if impossible:
         caption += (

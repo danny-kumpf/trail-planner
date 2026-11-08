@@ -27,6 +27,7 @@ from trail_planner.fitness import (
     FitnessOverview,
     effort_analysis,
     fitness_overview,
+    log_efforts,
 )
 from trail_planner.fitness_plots import (
     elevation_and_grade,
@@ -474,6 +475,16 @@ def fitness_summary():
         trend=None if overview.model is None else fitness_trend(overview),
         coverage=None if overview.model is None else model_coverage(overview),
     )
+
+
+@app.get("/api/fitness/effort-ids")
+def fitness_effort_ids():
+    """The ids of the activities that are efforts, without fitting the model or scoring them."""
+    with climb_blocks_lock:
+        efforts, _ = log_efforts(
+            app.config["TRAINING_LOG_PATH"], app.config["ACTIVITY_FILES_DIR"], app.config["CLIMB_BLOCKS_PATH"]
+        )
+    return jsonify([e.id for e in efforts])
 
 
 @app.get("/api/fitness/efforts/<activity_id>")

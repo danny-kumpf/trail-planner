@@ -99,7 +99,7 @@ The **Training Log** tab shows every recorded activity on a calendar, modelled o
 
 In monthly and yearly views, hover over a circle to see its numbers. The type filter limits both the circles and the totals. The sidebar jumps to a year or month, and lists races under their month.
 
-Click any circle to edit the activity. You can give it a grade (A, B, C, D or F) and override its type, time, distance, vert or running. Changing the type is how a run becomes a Race. Overriding vert is how a treadmill or stairwell session gets its climbing. Recorded values show greyed as placeholders, and **Reset** goes back to one. Overridden numbers are underlined with a dotted line on the calendar.
+Click any circle to edit the activity. You can give it a grade (A, B, C, D or F) and override its type, time, distance, vert or running. Changing the type is how a run becomes a Race. Overriding vert is how a treadmill or stairwell session gets its climbing. Recorded values show greyed as placeholders, and **Reset** goes back to one. Overridden numbers are underlined with a dotted line on the calendar. If the activity is a climbing effort on the Fitness tab, **Explore** opens its effort page.
 
 **Where activities come from.** Your whole history comes in once from a Strava account export. After that, **Sync with Strava** keeps the log up to date.
 

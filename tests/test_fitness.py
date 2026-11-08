@@ -205,6 +205,7 @@ def test_fitness_endpoints(client):
         "Elevation and grade", "Climbing", "Vertical rate vs heart rate", "Vertical rate vs elevation"
     ]
     assert client.get("/api/fitness/efforts/2").status_code == 404
+    assert client.get("/api/fitness/effort-ids").json == ["1"]
 
 
 def test_excluding_the_only_effort_leaves_no_model(client):

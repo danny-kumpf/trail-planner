@@ -201,6 +201,16 @@
   .editor-actions button { border-radius: 8px; padding: 8px 16px; font-weight: 600; }
   .editor-actions .cancel { background: none; border: 1px solid var(--border); }
   .editor-actions .save { background: var(--accent); color: var(--accent-text); border: none; }
+  /* On the left, apart from Cancel and Save. */
+  .editor-actions .explore {
+    margin-right: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+  }
 
   @media (max-width: 700px) {
     /* Stretched, so the grid scrolls sideways within the screen width rather than widening the page. */
@@ -277,6 +287,7 @@
       <p class="editor-hint">Greyed values are what was recorded. Type a value to override it; Reset goes back to the recorded value.</p>
       <p class="editor-error" id="editor-error" hidden></p>
       <div class="editor-actions">
+        <a class="explore" id="editor-explore" hidden>Explore</a>
         <button type="button" class="cancel" id="editor-cancel">Cancel</button>
         <button type="submit" class="save">Save</button>
       </div>
@@ -344,6 +355,8 @@ let activities = [];
 let weekStartWeekday = loadWeekStartWeekday();
 // The first day of each week with a saved plan.
 let plannedWeekStarts = new Set();
+// The activities that are efforts on the Fitness tab, once known.
+let effortIds = new Set();
 
 // ---- Periods ----
 // A period is one row: a span of days, split into the columns shown for it.
@@ -714,7 +727,15 @@ function openEditor(a) {
   $("edit-type").value = a.overridden_fields.includes("type") ? a.type : "";
   $("edit-grade").value = a.grade ?? "";
   $("editor-error").hidden = true;
+  showExplore();
   $("editor").showModal();
+}
+
+// The link to the activity's effort page, if it's an effort.
+function showExplore() {
+  if (!editing) return;
+  $("editor-explore").hidden = !effortIds.has(editing.id);
+  $("editor-explore").href = `/fitness/efforts/${encodeURIComponent(editing.id)}`;
 }
 
 function editedManual() {
@@ -768,6 +789,8 @@ $("editor-form").addEventListener("submit", async (event) => {
     return;
   }
   activities = activities.map((a) => (a.id === result.id ? result : a));
+  // A changed type can make it an effort or stop it being one.
+  loadEffortIds();
   $("editor").close();
   render();
 });
@@ -872,6 +895,15 @@ async function loadPlannedWeekStarts() {
   if (response.ok) plannedWeekStarts = new Set((await response.json()).map(dayOfIsoDate));
 }
 
+// Not waited for: the first time, every recording is analysed, which takes a minute or so.
+// Without them the editor just has no Explore link.
+async function loadEffortIds() {
+  const response = await fetch("/api/fitness/effort-ids");
+  if (!response.ok) return;
+  effortIds = new Set(await response.json());
+  showExplore();
+}
+
 async function loadActivities() {
   const [response] = await Promise.all([fetch("/api/activities"), loadPlannedWeekStarts()]);
   if (!response.ok) {
@@ -879,6 +911,7 @@ async function loadActivities() {
     return;
   }
   activities = await response.json();
+  loadEffortIds();
   $("message").hidden = true;
   if (!activities.length) {
     showMessage("No activities yet. Sync with Strava, or first import your Strava account export with: " +
