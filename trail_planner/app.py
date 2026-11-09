@@ -6,6 +6,7 @@ Usage: uv run python -m trail_planner.app, then open http://localhost:5000
 import random
 import secrets
 import threading
+from collections import OrderedDict
 from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -41,12 +42,12 @@ from trail_planner.fitness_plots import (
 from trail_planner.planner import (
     NoCombinations,
     NoPlanInTolerance,
+    NoPlan,
     NotEnoughRunnable,
     Plan,
-    PlanFound,
     PlanRequest,
-    PlanResult,
-    shuffle_plan,
+    PlansFound,
+    shuffle_plans,
 )
 from trail_planner.swaps import SwapOption, swap_options
 from trail_planner.trails import DEFAULT_GPX_DIR, DEFAULT_TRAILS_PATH, Trail, load_trails
@@ -108,6 +109,11 @@ update_trails_lock = threading.Lock()
 week_plans_lock = threading.Lock()
 # Held while stored climb blocks are brought up to date, so two page loads don't both compute them.
 climb_blocks_lock = threading.Lock()
+# The acceptable plans last shuffled for each of the most recent (trails, request) pairs, in their
+# shuffled order, so stepping through them doesn't search again. Most recently used last.
+shuffled_plans: OrderedDict[tuple[tuple[Trail, ...], PlanRequest], tuple[Plan, ...]] = OrderedDict()
+MAX_REMEMBERED_SHUFFLES = 8
+shuffled_plans_lock = threading.Lock()
 # The plotly.js that the installed plotly writes figures for.
 PLOTLY_JS_DIR = Path(plotly.__file__).parent / "package_data"
 # The `state` of each approval sent to Strava and not yet returned, so the callback only accepts those.
@@ -156,10 +162,8 @@ def activity_json(activity: Activity) -> dict:
     }
 
 
-def result_json(result: PlanResult) -> dict:
+def no_plan_json(result: NoPlan) -> dict:
     match result:
-        case PlanFound(plan):
-            return {"status": "found", "plan": plan_json(plan)}
         case NoPlanInTolerance(closest, recommendation):
             return {
                 "status": "no_plan_in_tolerance",
@@ -262,15 +266,47 @@ def plan_request_json(plan_request: PlanRequest) -> dict:
     }
 
 
+def plan_index_or_none(value) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise TypeError("plan_index must be null or a non-negative integer")
+    return value
+
+
 @app.post("/api/plan")
 def plan():
-    body = request.get_json()
+    """One of the plans that meet the page's settings. With `plan_index` null, the acceptable plans
+    are shuffled into a new order and the first is returned; otherwise the plan at `plan_index` in
+    the order last shuffled for these settings and trails. If there's no such order (the trails have
+    changed, or it was forgotten), a new one is shuffled and its first plan returned. A found plan
+    comes with its `plan_index` and the `num_plans` in the order."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="body must be an object"), 400
     try:
         plan_request = plan_request_from_json(body)
-        result = shuffle_plan(load_trails(app.config["TRAILS_PATH"]).complete, plan_request, rng)
+        requested_index = plan_index_or_none(body.get("plan_index"))
+        trails = tuple(load_trails(app.config["TRAILS_PATH"]).complete)
+        key = (trails, plan_request)
+        with shuffled_plans_lock:
+            plans = shuffled_plans.get(key) if requested_index is not None else None
+            if plans is None:
+                result = shuffle_plans(list(trails), plan_request, rng)
+                if not isinstance(result, PlansFound):
+                    return jsonify(no_plan_json(result))
+                plans, plan_index = result.plans, 0
+                shuffled_plans[key] = plans
+                while len(shuffled_plans) > MAX_REMEMBERED_SHUFFLES:
+                    shuffled_plans.popitem(last=False)
+            else:
+                if requested_index >= len(plans):
+                    raise ValueError(f"plan_index {requested_index} is past the last of {len(plans)} plans")
+                plan_index = requested_index
+            shuffled_plans.move_to_end(key)
     except (KeyError, TypeError, ValueError) as e:
         return jsonify(error=str(e)), 400
-    return jsonify(result_json(result))
+    return jsonify(status="found", plan=plan_json(plans[plan_index]), plan_index=plan_index, num_plans=len(plans))
 
 
 def swap_option_json(option: SwapOption) -> dict:

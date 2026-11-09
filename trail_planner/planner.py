@@ -1,8 +1,8 @@
 """Choosing a week of trails whose total vert lands near a target.
 
-Shuffling rolls the number of outings first, so every count in the allowed range is equally
-likely regardless of how many combinations each count has, then picks uniformly at random
-among that count's acceptable plans.
+Shuffling puts every acceptable plan in a random order to step through. Each next plan's number
+of outings is drawn uniformly from the counts that still have plans left, regardless of how many
+plans each count has, then the plan is drawn uniformly from that count's.
 
 Every plan includes each required trail, and no plan includes an excluded one.
 """
@@ -70,8 +70,10 @@ class Plan:
 
 
 @dataclass(frozen=True)
-class PlanFound:
-    plan: Plan
+class PlansFound:
+    """Every acceptable plan, in shuffled order."""
+
+    plans: tuple[Plan, ...]
 
 
 @dataclass(frozen=True)
@@ -100,7 +102,8 @@ class NoCombinations:
     """There are too few non-excluded trails to fill any outing count in the range."""
 
 
-PlanResult = PlanFound | NoPlanInTolerance | NotEnoughRunnable | NoCombinations
+NoPlan = NoPlanInTolerance | NotEnoughRunnable | NoCombinations
+PlanResult = PlansFound | NoPlan
 
 
 @dataclass(frozen=True)
@@ -144,19 +147,32 @@ def is_acceptable(plan: Plan, request: PlanRequest) -> bool:
     return abs(plan.vert_error_frac) <= request.vert_tolerance_frac and has_enough_runnable(plan, request)
 
 
-def shuffle_plan(trails: list[Trail], request: PlanRequest, rng: random.Random) -> PlanResult:
+def shuffle_plans(trails: list[Trail], request: PlanRequest, rng: random.Random) -> PlanResult:
     """Raises ValueError if a required trail isn't among `trails`."""
     choices = trail_choices(trails, request)
-    outing_counts = list(range(request.min_outings, request.max_outings + 1))
-    rng.shuffle(outing_counts)
-    for num_outings in outing_counts:
-        acceptable = [p for p in plans_with_outings(choices, num_outings, request) if is_acceptable(p, request)]
-        if acceptable:
-            return PlanFound(rng.choice(acceptable))
-    return explain_no_plan(choices, request)
+    acceptable_by_outings = [
+        [p for p in plans_with_outings(choices, num_outings, request) if is_acceptable(p, request)]
+        for num_outings in range(request.min_outings, request.max_outings + 1)
+    ]
+    if not any(acceptable_by_outings):
+        return explain_no_plan(choices, request)
+    return PlansFound(shuffled_evenly_across_groups(acceptable_by_outings, rng))
 
 
-def explain_no_plan(choices: TrailChoices, request: PlanRequest) -> PlanResult:
+def shuffled_evenly_across_groups(groups: list[list[Plan]], rng: random.Random) -> tuple[Plan, ...]:
+    """Every plan in `groups`, in random order. Each next plan's group is drawn uniformly from the
+    groups with plans left, not in proportion to how many they have left."""
+    remaining = [rng.sample(group, len(group)) for group in groups if group]
+    order = []
+    while remaining:
+        group_index = rng.randrange(len(remaining))
+        order.append(remaining[group_index].pop())
+        if not remaining[group_index]:
+            del remaining[group_index]
+    return tuple(order)
+
+
+def explain_no_plan(choices: TrailChoices, request: PlanRequest) -> NoPlan:
     all_plans = [
         plan
         for num_outings in range(request.min_outings, request.max_outings + 1)

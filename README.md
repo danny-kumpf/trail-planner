@@ -15,15 +15,17 @@ It plans single weeks only. Long-term progression (e.g. +10% vert per week) is u
 
 Two calibration checks against AllTrails: Green from NCAR gives 2,468 ft (AllTrails lists 2,474 ft), and Lions Lair gives 910 ft (AllTrails lists 912 ft).
 
-**Planning.** Each click of **Shuffle** does this:
+**Planning.** Clicking **Generate** does this:
 
-1. Pick a random number of outings from the allowed range.
-2. Find every combination of that many trails that meets both conditions:
+1. For each number of outings in the allowed range, find every combination of that many trails that meets both conditions:
    - total vert is within the tolerance of the target (default ±3%);
    - total runnable miles is at least the running target.
-3. Return one of them at random. If none exist, try another number of outings.
+2. Shuffle all of them into one random order. For each next plan in the order, first pick a number of outings at random from the ones with plans left, then pick one of that count's plans.
+3. Show the first plan in the order.
 
-The number of outings is picked first so that, say, 3-outing and 6-outing weeks are equally likely, even though there are far more 6-trail combinations. The tolerance is symmetric, so small misses should cancel out over several weeks.
+The button then reads **Shuffle (1/N)**, where N is how many plans meet the conditions. Each click shows the next plan in the order without searching again, and after the last one it starts over at the first. Changing any setting turns the button back into **Generate**, which searches and shuffles anew.
+
+The number of outings is picked before the plan so that, say, 3-outing and 6-outing weeks come up about equally often early in the order, even though there are far more 6-trail combinations. The tolerance is symmetric, so small misses should cancel out over several weeks.
 
 If nothing fits, the page tells you why. Either it shows the closest plan with enough runnable miles, or it reports the most runnable miles any plan has.
 
@@ -47,7 +49,7 @@ uv sync
 uv run python -m trail_planner.app
 ```
 
-Open http://localhost:5000. The site has three tabs at the top: **Trail Planning** (described here), **Training Log** (see [Training log](#training-log)) and **Fitness** (see [Fitness](#fitness)). On Trail Planning, enter your targets, set the outings range (default 1–6), the tolerance, and whether a trail may repeat within the week. Then click **Shuffle** until you get a plan you like. Below the plan, **Included Trails** expands to a table of every plannable trail with its vert, distance and runnable miles. Its **Require** and **Exclude** checkboxes put a trail in every plan (say, one you want to run this week) or keep it out of all of them (one you just ran); by default neither is checked. Your settings and these choices are kept for each week while the browser tab is open, so going to the Training Log and back doesn't reset them. Under that, **Excluded Trails** lists the ones that don't have all three yet.
+Open http://localhost:5000. The site has three tabs at the top: **Trail Planning** (described here), **Training Log** (see [Training log](#training-log)) and **Fitness** (see [Fitness](#fitness)). On Trail Planning, enter your targets, set the outings range (default 1–6), the tolerance, and whether a trail may repeat within the week. Then click **Generate**, and **Shuffle** to step through the other plans until you get one you like. Below the plan, **Included Trails** expands to a table of every plannable trail with its vert, distance and runnable miles. Its **Require** and **Exclude** checkboxes put a trail in every plan (say, one you want to run this week) or keep it out of all of them (one you just ran); by default neither is checked. Your settings and these choices are kept for each week while the browser tab is open, so going to the Training Log and back doesn't reset them. Under that, **Excluded Trails** lists the ones that don't have all three yet.
 
 ### Swap an outing
 

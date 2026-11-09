@@ -153,7 +153,7 @@
     <label class="checkbox">
       <input type="checkbox" id="allow-repeats"> Allow repeat trails
     </label>
-    <button type="submit">Shuffle</button>
+    <button type="submit" id="plan-button">Generate</button>
   </form>
 
   <div id="result"></div>
@@ -248,6 +248,7 @@ function choiceColumn(header, choice) {
         showChoice(box.closest("tr"), trail.name);
         renderChoiceSummary();
         rememberSettings();
+        labelPlanButton();
       });
       const td = el("td", undefined, "choice-cell");
       td.append(box);
@@ -377,21 +378,54 @@ function applySettings(settings) {
   for (const name of settings.excluded_trails) trailChoices.set(name, Choice.exclude);
 }
 
+// ---- Stepping through the acceptable plans ----
+// The server shuffles every plan that meets the settings into an order, and each click shows the
+// next one. {settingsKey, planIndex, numPlans}: the settings of the order last shuffled, where in it
+// the last plan shown was, and how many plans it has. Null until a plan is found.
+let shuffled = null;
+
+// Settings as text that's equal whenever they ask for the same plans.
+function settingsKey(settings) {
+  return JSON.stringify({ ...settings,
+                          required_trails: [...settings.required_trails].sort(),
+                          excluded_trails: [...settings.excluded_trails].sort() });
+}
+
+// The order last shuffled, if it was for the settings on the page; otherwise null, and the next
+// click shuffles a new one.
+function shuffledForForm() {
+  return shuffled?.settingsKey === settingsKey(formSettings()) ? shuffled : null;
+}
+
+function labelPlanButton() {
+  const current = shuffledForForm();
+  $("plan-button").textContent = current ? `Shuffle (${current.planIndex + 1}/${current.numPlans})` : "Generate";
+}
+
 $("plan-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const settings = formSettings();
+  const current = shuffledForForm();
+  // After the last plan in the order, start over at the first.
+  const planIndex = current ? (current.planIndex + 1) % current.numPlans : null;
   const response = await fetch("/api/plan", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(settings),
+    body: JSON.stringify({ ...settings, plan_index: planIndex }),
   });
   const result = await response.json();
   if (!response.ok) {
     showNoPlan(el("p", result.error, "status warn"));
     return;
   }
+  shuffled = result.status === "found"
+    ? { settingsKey: settingsKey(settings), planIndex: result.plan_index, numPlans: result.num_plans }
+    : null;
+  labelPlanButton();
   renderResult(result, settings);
 });
+
+$("plan-form").addEventListener("input", labelPlanButton);
 
 // ---- The week being planned ----
 // The one whose first day is in the URL's ?week=YYYY-MM-DD, as the Training Log links to it;
@@ -607,6 +641,7 @@ async function restorePage() {
   if (saved) showPlan(saved.plan, saved.request, { lead: [el("p", `Saved plan for ${weekPhrase}:`, "status")], savable: false });
   const settings = rememberedSettings() ?? saved?.request;
   if (settings) applySettings(settings);
+  labelPlanButton();
 }
 
 // The plannable trails, as last loaded; null until they are.
@@ -623,6 +658,7 @@ async function loadCatalog() {
   const plannableNames = new Set(catalog.complete.map((t) => t.name));
   for (const name of trailChoices.keys()) if (!plannableNames.has(name)) trailChoices.delete(name);
   renderChoiceSummary();
+  labelPlanButton();
   catalogTrails = catalog.complete;
   drawIncluded();
   $("excluded-section").hidden = !catalog.incomplete_names.length;
