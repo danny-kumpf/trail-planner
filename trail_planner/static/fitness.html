@@ -162,7 +162,7 @@ function effortsTable(efforts) {
     row.classList.toggle("ruled-out", effort.model_choice === "exclude");
     const [low, high] = effort.elevation_span_ft;
     const explore = fitnessEl("a", "Explore", "explore");
-    explore.href = `/fitness/efforts/${encodeURIComponent(effort.id)}`;
+    explore.href = `/fitness/activities/${encodeURIComponent(effort.id)}`;
     const exploreCell = fitnessEl("td");
     exploreCell.append(explore);
     row.append(
@@ -202,7 +202,7 @@ async function load() {
     const plot = await appendPanel($("charts"), fitness.trend);
     plot.on("plotly_click", (event) => {
       const [activityId] = event.points[0].customdata;
-      window.location.href = `/fitness/efforts/${encodeURIComponent(activityId)}`;
+      window.location.href = `/fitness/activities/${encodeURIComponent(activityId)}`;
     });
   }
   $("efforts-heading").hidden = !fitness.efforts.length;

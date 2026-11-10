@@ -26,9 +26,11 @@ from trail_planner.fitness import (
     STANDARD_CONDITIONS,
     Effort,
     FitnessOverview,
-    effort_analysis,
+    activity_analysis,
+    explorable_activity,
+    explorable_ids,
     fitness_overview,
-    log_efforts,
+    why_not_an_effort,
 )
 from trail_planner.fitness_plots import (
     elevation_and_grade,
@@ -197,9 +199,9 @@ def fitness():
     return app.send_static_file("fitness.html")
 
 
-@app.get("/fitness/efforts/<activity_id>")
-def fitness_effort_page(activity_id: str):
-    return app.send_static_file("fitness_effort.html")
+@app.get("/fitness/activities/<activity_id>")
+def fitness_activity_page(activity_id: str):
+    return app.send_static_file("fitness_activity.html")
 
 
 @app.get("/plotly.min.js")
@@ -513,28 +515,45 @@ def fitness_summary():
     )
 
 
-@app.get("/api/fitness/effort-ids")
-def fitness_effort_ids():
-    """The ids of the activities that are efforts, without fitting the model or scoring them."""
+@app.get("/api/fitness/explorable-ids")
+def fitness_explorable_ids():
+    """The ids of the activities with a page to explore, without fitting the model or scoring them."""
     with climb_blocks_lock:
-        efforts, _ = log_efforts(
+        ids = explorable_ids(
             app.config["TRAINING_LOG_PATH"], app.config["ACTIVITY_FILES_DIR"], app.config["CLIMB_BLOCKS_PATH"]
         )
-    return jsonify([e.id for e in efforts])
+    return jsonify(ids)
 
 
-@app.get("/api/fitness/efforts/<activity_id>")
-def fitness_effort(activity_id: str):
-    """One effort in full: its scores and the figures for looking at it closely."""
-    overview = current_fitness()
-    effort = overview.effort(activity_id)
-    if effort is None:
-        return jsonify(error=f"no effort {activity_id!r}: it isn't on foot, has no heart rate, or climbs too little"), 404
+@app.get("/api/fitness/activities/<activity_id>")
+def fitness_activity(activity_id: str):
+    """One activity's climbing in full, for looking at it closely. An effort also gets its scores
+    and its figures against the model; any other activity only the figures of its recording."""
+    activity = explorable_activity(activity_id, app.config["TRAINING_LOG_PATH"])
+    if activity is None:
+        return jsonify(error=f"nothing to explore for {activity_id!r}: it isn't in the log, doesn't cover "
+                             "distance, or has no recording"), 404
     try:
-        analysis = effort_analysis(activity_id, app.config["TRAINING_LOG_PATH"], app.config["ACTIVITY_FILES_DIR"])
+        analysis = activity_analysis(activity_id, app.config["TRAINING_LOG_PATH"], app.config["ACTIVITY_FILES_DIR"])
     except (ValueError, OSError) as e:
         return jsonify(error=f"couldn't read the recording: {e}"), 500
     panels = [elevation_and_grade(analysis), track_overview(analysis)]
+    overview = current_fitness()
+    effort = overview.effort(activity_id)
+    activity_fields = {
+        "id": activity.id,
+        "name": activity.name,
+        "type": activity.type.value,
+        "start_local": activity.start_local.isoformat(),
+    }
+    if effort is None:
+        return jsonify(
+            **fitness_context_json(overview),
+            activity=activity_fields,
+            effort=None,
+            not_effort_reason=why_not_an_effort(activity),
+            panels=panels,
+        )
     if overview.model is not None:
         comparison = overview.comparison_model(effort)
         if comparison is not None:
@@ -548,7 +567,13 @@ def fitness_effort(activity_id: str):
             rate_vs_heart_rate(effort, overview.model, at_standard_ft_per_hr),
             rate_vs_elevation(effort, overview.model, at_standard_ft_per_hr),
         ]
-    return jsonify(**fitness_context_json(overview), effort=effort_json(effort, overview), panels=panels)
+    return jsonify(
+        **fitness_context_json(overview),
+        activity=activity_fields,
+        effort=effort_json(effort, overview),
+        not_effort_reason=None,
+        panels=panels,
+    )
 
 
 def strava_redirect_uri() -> str:

@@ -126,14 +126,14 @@ def modelled_blocks(blocks: list[ClimbBlock]) -> list[ClimbBlock]:
 # ---- Stored climb blocks ----
 
 
+def could_be_explored(activity: Activity, entry: dict) -> bool:
+    """Covers distance, with a recording of where it went."""
+    return activity.type.covers_distance and bool(entry.get("recording_file")) and "strava" in entry
+
+
 def could_be_effort(activity: Activity, entry: dict) -> bool:
     """On foot, with a recording that has heart rate."""
-    return (
-        activity.type.is_on_foot
-        and activity.avg_heart_rate_bpm is not None
-        and bool(entry.get("recording_file"))
-        and "strava" in entry
-    )
+    return could_be_explored(activity, entry) and activity.type.is_on_foot and activity.avg_heart_rate_bpm is not None
 
 
 def analysis_inputs(entry: dict) -> dict:
@@ -250,6 +250,20 @@ def effort_score(effort: Effort, model: ClimbModel, comparison: ClimbModel | Non
     )
 
 
+def explorable_ids(log_path: Path, activity_files_dir: Path, store_path: Path) -> list[str]:
+    """The activities whose climbing can be looked at closely: those that could be explored and
+    whose recordings could be analysed. Efforts are among them, along with activities without heart
+    rate, not on foot, or with too little climbing to score."""
+    entries = read_log(log_path)
+    candidates = [
+        activity_id
+        for activity_id, entry in entries.items()
+        if could_be_explored(activity_from_entry(activity_id, entry), entry)
+    ]
+    blocks, _ = climb_blocks_by_activity(entries, candidates, activity_files_dir, store_path)
+    return [activity_id for activity_id in candidates if activity_id in blocks]
+
+
 def log_efforts(log_path: Path, activity_files_dir: Path, store_path: Path) -> tuple[list[Effort], dict[str, str]]:
     """Every effort in the training log, newest first; and the activities whose recordings
     couldn't be analysed, with why."""
@@ -285,7 +299,28 @@ def fitness_overview(log_path: Path, activity_files_dir: Path, store_path: Path)
     return FitnessOverview(efforts, membership, model, None, scores, unreadable)
 
 
-def effort_analysis(activity_id: str, log_path: Path, activity_files_dir: Path) -> ClimbAnalysis:
+def explorable_activity(activity_id: str, log_path: Path) -> Activity | None:
+    """The activity, if it could be explored; None if it isn't in the log or couldn't be."""
+    entry = read_log(log_path).get(activity_id)
+    if entry is None:
+        return None
+    activity = activity_from_entry(activity_id, entry)
+    return activity if could_be_explored(activity, entry) else None
+
+
+def why_not_an_effort(activity: Activity) -> str:
+    """Why an activity that could be explored isn't an effort."""
+    if not activity.type.is_on_foot:
+        return "it isn't on foot"
+    if activity.avg_heart_rate_bpm is None:
+        return "it has no heart rate"
+    return (
+        f"it has less than {MIN_EFFORT_CLIMBING_S / 60:.0f} minutes of climbing at "
+        f"{MIN_MODELLED_HEART_RATE_BPM:.0f} bpm or more"
+    )
+
+
+def activity_analysis(activity_id: str, log_path: Path, activity_files_dir: Path) -> ClimbAnalysis:
     """An activity's climbing in full, from its recording, for looking at it closely."""
     entry = read_log(log_path)[activity_id]
     return analyse_climbs(kept_recording(entry, activity_files_dir))

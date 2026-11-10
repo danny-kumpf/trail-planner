@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Effort</title>
+<title>Activity</title>
 <link rel="stylesheet" href="/static/site.css">
 <script src="/plotly.min.js"></script>
 <script src="/static/fitness.js"></script>
@@ -71,19 +71,28 @@ function membershipNote(effort) {
 }
 
 async function load() {
-  const response = await fetch(`/api/fitness/efforts/${encodeURIComponent(activityId)}`);
+  const response = await fetch(`/api/fitness/activities/${encodeURIComponent(activityId)}`);
   const detail = await response.json();
   if (!response.ok) {
     $("status").className = "status warn";
     $("status").textContent = detail.error;
     return;
   }
-  const effort = detail.effort;
-  document.title = effort.name;
-  $("name").textContent = effort.name;
-  $("date").textContent = fmtDate(effort.start_local);
-  $("status").textContent = detail.model ? "" : `No model yet: ${detail.no_model_reason}.`;
+  const activity = detail.activity;
+  document.title = activity.name;
+  $("name").textContent = activity.name;
+  $("date").textContent = fmtDate(activity.start_local);
+  $("scores").replaceChildren(...(detail.effort ? effortScores(detail.effort, detail) : []));
+  $("status").textContent =
+    !detail.effort ? `Not an effort: ${detail.not_effort_reason}. So there's no model to compare it with, ` +
+                     "only its recording." :
+    !detail.model ? `No model yet: ${detail.no_model_reason}.` :
+    "";
 
+  for (const panel of detail.panels) await appendPanel($("panels"), panel);
+}
+
+function effortScores(effort, detail) {
   const [low, high] = effort.elevation_span_ft;
   const scores = [
     score("Climbing", fmtMinutes(effort.climbing_s),
@@ -100,9 +109,7 @@ async function load() {
             { text: elevationWarning(effort), className: "warn" }),
     );
   }
-  $("scores").replaceChildren(...scores);
-
-  for (const panel of detail.panels) await appendPanel($("panels"), panel);
+  return scores;
 }
 
 load();

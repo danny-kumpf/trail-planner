@@ -36,6 +36,12 @@ class ActivityType(StrEnum):
         """Whether part of it may have been run, as opposed to ridden, skied or lifted."""
         return self in (ActivityType.HIKE, ActivityType.TRAIL_RUN, ActivityType.RACE)
 
+    @property
+    def covers_distance(self) -> bool:
+        """Whether it goes somewhere, so its recording is a track over terrain, as opposed to e.g.
+        yoga or climbing, which only take time."""
+        return self != ActivityType.WORKOUT
+
 
 class Grade(StrEnum):
     A = "A"

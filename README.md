@@ -101,7 +101,7 @@ The **Training Log** tab shows every recorded activity on a calendar, modelled o
 
 In monthly and yearly views, hover over a circle to see its numbers. The type filter limits both the circles and the totals. The sidebar jumps to a year or month, and lists races under their month.
 
-Click any circle to edit the activity. You can give it a grade (A, B, C, D or F) and override its type, time, distance, vert or running. Changing the type is how a run becomes a Race. Overriding vert is how a treadmill or stairwell session gets its climbing. Recorded values show greyed as placeholders, and **Reset** goes back to one. Overridden numbers are underlined with a dotted line on the calendar. If the activity is a climbing effort on the Fitness tab, **Explore** opens its effort page.
+Click any circle to edit the activity. You can give it a grade (A, B, C, D or F) and override its type, time, distance, vert or running. Changing the type is how a run becomes a Race. Overriding vert is how a treadmill or stairwell session gets its climbing. Recorded values show greyed as placeholders, and **Reset** goes back to one. Overridden numbers are underlined with a dotted line on the calendar. If the activity has a recording and covers distance (anything but a Workout), **Explore** opens its page on the Fitness tab.
 
 **Where activities come from.** Your whole history comes in once from a Strava account export. After that, **Sync with Strava** keeps the log up to date.
 
@@ -202,10 +202,13 @@ An **effort** is a hike, trail run or race whose recording has heart rate and at
 - **At standard**: the effort's climbing rate moved through the model to 150 bpm, 8,000 ft and 15% grade, hiking. It answers "how fast was I climbing?" in ft/hr, whatever the terrain, heart rate and gait. The chart above the table plots it over time.
 - **Vs model**: how much more vert the effort climbed than the model predicted for its own heart rate, elevation, grade and gait. An effort in the model is compared with the model fit without it. Otherwise it would partly be compared with itself. ⚠ marks an effort with climbing at elevations that model wasn't fit on, where the comparison extrapolates.
 
-**Explore** opens an effort's page:
+**Explore** opens an activity's page. Every activity with a recording that covers distance has one, efforts or not:
 
 - its elevation over time and distance, and its grade;
-- its climbs, with each climb's average rate, and its heart rate;
+- its climbs, with each climb's average rate, and its heart rate if it has one.
+
+An effort's page also shows its scores, and:
+
 - its climbing rate block by block, against what the model predicted, at 120 bpm or more;
 - under **Model coverage**, the heatmap for the model it's compared with, with the effort's own blocks drawn on top, so you can see where the comparison extrapolates;
 - its climbing rate against heart rate and against elevation, with the model's line.
@@ -257,7 +260,7 @@ uv run pytest
 | `trail_planner/static/calendar.js` | Calendar days and weeks, and the week start day, shared by both tabs |
 | `trail_planner/static/trail_planning.html` | The Trail Planning tab |
 | `trail_planner/static/training_log.html` | The Training Log tab |
-| `trail_planner/static/fitness.html`, `fitness_effort.html` | The Fitness tab, and an effort's Explore page |
+| `trail_planner/static/fitness.html`, `fitness_activity.html` | The Fitness tab, and an activity's Explore page |
 | `trail_planner/static/fitness.js` | Drawing figures and formatting, shared by the Fitness pages |
 | `tests/` | Unit tests |
 

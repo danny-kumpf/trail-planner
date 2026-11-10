@@ -355,8 +355,8 @@ let activities = [];
 let weekStartWeekday = loadWeekStartWeekday();
 // The first day of each week with a saved plan.
 let plannedWeekStarts = new Set();
-// The activities that are efforts on the Fitness tab, once known.
-let effortIds = new Set();
+// The activities with a page to explore on the Fitness tab, once known.
+let explorableIds = new Set();
 
 // ---- Periods ----
 // A period is one row: a span of days, split into the columns shown for it.
@@ -731,11 +731,11 @@ function openEditor(a) {
   $("editor").showModal();
 }
 
-// The link to the activity's effort page, if it's an effort.
+// The link to the activity's page on the Fitness tab, if it has one.
 function showExplore() {
   if (!editing) return;
-  $("editor-explore").hidden = !effortIds.has(editing.id);
-  $("editor-explore").href = `/fitness/efforts/${encodeURIComponent(editing.id)}`;
+  $("editor-explore").hidden = !explorableIds.has(editing.id);
+  $("editor-explore").href = `/fitness/activities/${encodeURIComponent(editing.id)}`;
 }
 
 function editedManual() {
@@ -790,7 +790,7 @@ $("editor-form").addEventListener("submit", async (event) => {
   }
   activities = activities.map((a) => (a.id === result.id ? result : a));
   // A changed type can make it an effort or stop it being one.
-  loadEffortIds();
+  loadExplorableIds();
   $("editor").close();
   render();
 });
@@ -897,10 +897,10 @@ async function loadPlannedWeekStarts() {
 
 // Not waited for: the first time, every recording is analysed, which takes a minute or so.
 // Without them the editor just has no Explore link.
-async function loadEffortIds() {
-  const response = await fetch("/api/fitness/effort-ids");
+async function loadExplorableIds() {
+  const response = await fetch("/api/fitness/explorable-ids");
   if (!response.ok) return;
-  effortIds = new Set(await response.json());
+  explorableIds = new Set(await response.json());
   showExplore();
 }
 
@@ -911,7 +911,7 @@ async function loadActivities() {
     return;
   }
   activities = await response.json();
-  loadEffortIds();
+  loadExplorableIds();
   $("message").hidden = true;
   if (!activities.length) {
     showMessage("No activities yet. Sync with Strava, or first import your Strava account export with: " +

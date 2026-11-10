@@ -200,12 +200,37 @@ def test_fitness_endpoints(client):
     assert only["vs_model_frac"] is None
     assert summary["trend"]["figure"]["light"]["data"]
 
-    detail = client.get("/api/fitness/efforts/1").json
+    detail = client.get("/api/fitness/activities/1").json
+    assert detail["effort"]["id"] == "1" and detail["not_effort_reason"] is None
     assert [p["title"] for p in detail["panels"]] == [
         "Elevation and grade", "Climbing", "Vertical rate vs heart rate", "Vertical rate vs elevation"
     ]
-    assert client.get("/api/fitness/efforts/2").status_code == 404
-    assert client.get("/api/fitness/effort-ids").json == ["1"]
+    assert client.get("/api/fitness/activities/2").status_code == 404
+    assert client.get("/api/fitness/explorable-ids").json == ["1"]
+
+
+def test_activities_that_arent_efforts_can_still_be_explored(client, log_path):
+    without_heart_rate = fit_hike_entry()
+    without_heart_rate["recorded"]["avg_heart_rate_bpm"] = None
+    ridden = fit_hike_entry()
+    ridden["recorded"]["type"] = "bike"
+    workout = fit_hike_entry()
+    workout["recorded"]["type"] = "workout"
+    no_recording = {**fit_hike_entry(), "recording_file": None}
+    log_path.write_text(json.dumps({
+        "1": fit_hike_entry(), "no-hr": without_heart_rate, "bike": ridden, "workout": workout, "none": no_recording,
+    }))
+
+    assert sorted(client.get("/api/fitness/explorable-ids").json) == ["1", "bike", "no-hr"]
+    assert [e["id"] for e in client.get("/api/fitness").json["efforts"]] == ["1"]
+    for activity_id, reason in [("no-hr", "it has no heart rate"), ("bike", "it isn't on foot")]:
+        detail = client.get(f"/api/fitness/activities/{activity_id}").json
+        assert detail["activity"]["id"] == activity_id
+        assert detail["effort"] is None and detail["not_effort_reason"] == reason
+        # Only the figures of its recording: there's no effort to compare with the model.
+        assert [p["title"] for p in detail["panels"]] == ["Elevation and grade", "Climbing"]
+    assert client.get("/api/fitness/activities/workout").status_code == 404
+    assert client.get("/api/fitness/activities/none").status_code == 404
 
 
 def test_excluding_the_only_effort_leaves_no_model(client):
