@@ -27,23 +27,47 @@ function fitnessEl(tag, text, className) {
 // them, e.g. after a refit.
 const openPanelTitles = new Set();
 
-// Appends a panel ({title, caption, figure, starts_collapsed}) to `container` and draws it; resolves
-// to the plot element. A panel that starts collapsed is drawn when first opened, as a hidden plot
-// can't be sized; it resolves to undefined.
-function appendPanel(container, panel) {
+// A figure's caption and plot, and the [plot element, figure] to draw.
+function figureNodes(panel) {
   const plot = fitnessEl("div", undefined, "plot");
-  const caption = fitnessEl("p", panel.caption, "caption");
+  return { nodes: [fitnessEl("p", panel.caption, "caption"), plot], toDraw: [plot, panel.figure] };
+}
+
+// Appends a panel to `container` and draws it. A panel is one figure ({title, caption, figure}),
+// or a group of them under one heading ({title, panels}), each with its own title and caption.
+// Resolves to the plot elements, in order. A panel that starts collapsed ({starts_collapsed}) is
+// drawn when first opened, as a hidden plot can't be sized; it resolves to [].
+function appendPanel(container, panel) {
+  const body = [];
+  const toDraw = [];
+  if (panel.panels) {
+    for (const member of panel.panels) {
+      const figure = figureNodes(member);
+      const section = fitnessEl("section", undefined, "subpanel");
+      section.append(fitnessEl("h3", member.title), ...figure.nodes);
+      body.push(section);
+      toDraw.push(figure.toDraw);
+    }
+  } else {
+    const figure = figureNodes(panel);
+    body.push(...figure.nodes);
+    toDraw.push(figure.toDraw);
+  }
+  const drawAll = () => {
+    drawnFigures.push(...toDraw);
+    return Promise.all(toDraw.map(([plot, figure]) => drawFigure(plot, figure)));
+  };
+
   if (!panel.starts_collapsed) {
     const section = fitnessEl("section", undefined, "panel");
-    section.append(fitnessEl("h2", panel.title), caption, plot);
+    section.append(fitnessEl("h2", panel.title), ...body);
     container.append(section);
-    drawnFigures.push([plot, panel.figure]);
-    return drawFigure(plot, panel.figure);
+    return drawAll();
   }
   const details = fitnessEl("details", undefined, "panel");
   const summary = fitnessEl("summary");
   summary.append(fitnessEl("h2", panel.title));
-  details.append(summary, caption, plot);
+  details.append(summary, ...body);
   container.append(details);
   let drawn = false;
   details.addEventListener("toggle", () => {
@@ -51,12 +75,11 @@ function appendPanel(container, panel) {
     else openPanelTitles.delete(panel.title);
     if (details.open && !drawn) {
       drawn = true;
-      drawnFigures.push([plot, panel.figure]);
-      drawFigure(plot, panel.figure);
+      drawAll();
     }
   });
   details.open = openPanelTitles.has(panel.title);
-  return Promise.resolve(undefined);
+  return Promise.resolve([]);
 }
 
 const fmtRate = (ftPerHr) => Math.round(ftPerHr).toLocaleString() + " ft/hr";

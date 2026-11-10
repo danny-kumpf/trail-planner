@@ -35,10 +35,8 @@ from trail_trainer.fitness import (
 from trail_trainer.fitness_plots import (
     elevation_and_grade,
     fitness_trend,
-    model_coverage,
+    model_details,
     predicted_vs_actual,
-    rate_vs_elevation,
-    rate_vs_heart_rate,
     track_overview,
 )
 from trail_trainer.planner import (
@@ -511,7 +509,7 @@ def fitness_summary():
         efforts=[effort_json(e, overview) for e in overview.efforts],
         num_unreadable=len(overview.unreadable),
         trend=None if overview.model is None else fitness_trend(overview),
-        coverage=None if overview.model is None else model_coverage(overview),
+        model_details=None if overview.model is None else model_details(overview),
     )
 
 
@@ -560,13 +558,7 @@ def fitness_activity(activity_id: str):
             panels.append(
                 predicted_vs_actual(analysis, comparison, compared_without_effort=effort.id in overview.membership)
             )
-        if (coverage := model_coverage(overview, effort)) is not None:
-            panels.append(coverage)
-        at_standard_ft_per_hr = overview.scores[activity_id].at_standard_ft_per_hr
-        panels += [
-            rate_vs_heart_rate(effort, overview.model, at_standard_ft_per_hr),
-            rate_vs_elevation(effort, overview.model, at_standard_ft_per_hr),
-        ]
+        panels.append(model_details(overview, effort))
     return jsonify(
         **fitness_context_json(overview),
         activity=activity_fields,

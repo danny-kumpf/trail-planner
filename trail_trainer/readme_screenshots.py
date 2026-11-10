@@ -93,14 +93,25 @@ def latest_effort_in_model_id(page: Page, base_url: str) -> str:
     return max(in_model, key=lambda e: e["start_local"])["id"]
 
 
+def opened_group_member(page: Page, group_title: str, title: str) -> Locator:
+    """The figure titled `title` in the collapsed group of panels titled `group_title`, opening the
+    group if it isn't, once the figure's plot is drawn."""
+    group = page.locator("details.panel").filter(has=page.get_by_role("heading", name=group_title, exact=True))
+    if not group.evaluate("details => details.open"):
+        group.locator("summary").click()
+    member = group.locator("section.subpanel").filter(has=page.get_by_role("heading", name=title, exact=True))
+    member.locator(".main-svg").first.wait_for()
+    return member
+
+
 def shoot_effort_panels(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/fitness/activities/{latest_effort_in_model_id(page, base_url)}")
+    panel(page, "Climbing").screenshot(path=SCREENSHOTS_DIR / "effort_climbing.png")
     for title, filename in [
-        ("Climbing", "effort_climbing.png"),
         ("Vertical rate vs heart rate", "effort_rate_vs_heart_rate.png"),
         ("Vertical rate vs elevation", "effort_rate_vs_elevation.png"),
     ]:
-        panel(page, title).screenshot(path=SCREENSHOTS_DIR / filename)
+        opened_group_member(page, "Model details", title).screenshot(path=SCREENSHOTS_DIR / filename)
 
 
 def main() -> None:

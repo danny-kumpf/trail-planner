@@ -79,7 +79,8 @@ DATA_KEYS = ("x", "y", "z", "customdata", "text", "ids", "hovertext", "width", "
 
 def panel(title: str, caption: str, build: Callable[[Theme], go.Figure], starts_collapsed: bool = False) -> dict:
     """A figure with its heading and caption, built for both themes. A panel that starts collapsed
-    shows only its heading until it's opened."""
+    shows only its heading until it's opened. In a panel_group, the group's starts_collapsed applies
+    instead."""
     light = json.loads(build(LIGHT).to_json())
     dark = json.loads(build(DARK).to_json())
     dark["data"] = [{k: v for k, v in trace.items() if k not in DATA_KEYS} for trace in dark["data"]]
@@ -89,6 +90,11 @@ def panel(title: str, caption: str, build: Callable[[Theme], go.Figure], starts_
         "figure": {"light": light, "dark": dark},
         "starts_collapsed": starts_collapsed,
     }
+
+
+def panel_group(title: str, panels: list[dict], starts_collapsed: bool = False) -> dict:
+    """Panels under one heading, each with its own title and caption, opened and collapsed together."""
+    return {"title": title, "panels": panels, "starts_collapsed": starts_collapsed}
 
 
 def styled(figure: go.Figure, theme: Theme, height_px: int, has_legend: bool = False) -> go.Figure:
@@ -552,161 +558,6 @@ def predicted_vs_actual(analysis: ClimbAnalysis, comparison: ClimbModel, compare
     )
 
 
-def adjusted_ft_per_hr(model: ClimbModel, columns: BlockColumns, keep: str) -> np.ndarray:
-    """Each block's rate moved through the model to the standard conditions, except in `keep`, which
-    is "heart_rate" or "elevation".
-
-    A line through the raw cloud against one variable would mix in the others. Moved to common
-    conditions in the others, the points line up with the model's line in the kept one, and still
-    show whether that relationship is really straight. Grade and gait are always moved, so every
-    block's power is spent on the same terrain.
-    """
-    standard = STANDARD_CONDITIONS
-    adjusted_w_per_kg = columns.power_w_per_kg
-    if keep != "heart_rate":
-        adjusted_w_per_kg = adjusted_w_per_kg - model.hr_slope_w_per_kg_per_bpm * (
-            columns.heart_rate_bpm - standard.heart_rate_bpm
-        )
-    if keep != "elevation":
-        adjusted_w_per_kg = adjusted_w_per_kg - model.elevation_slope_w_per_kg_per_ft * (
-            columns.elevation_ft - standard.elevation_ft
-        )
-    return adjusted_w_per_kg * ft_per_hr_per_w_per_kg(standard.grade_frac, standard.running_frac)
-
-
-def gait_text(running_frac: float) -> str:
-    if running_frac == 0:
-        return "hiking"
-    if running_frac == 1:
-        return "running"
-    return f"{running_frac:.0%} running"
-
-
-def rate_against(
-    effort: Effort,
-    model: ClimbModel,
-    at_standard_ft_per_hr: float,
-    keep: str,
-    x: np.ndarray,
-    standard_x: float,
-    x_title: str,
-    x_hover: str,
-    color_by: np.ndarray,
-    color_title: str,
-    line_name: str,
-    predict_line: Callable[[np.ndarray], np.ndarray],
-) -> Callable[[Theme], go.Figure]:
-    columns = effort.columns
-    adjusted = adjusted_ft_per_hr(model, columns, keep)
-    line_x = np.linspace(min(x.min(), standard_x), max(x.max(), standard_x), 50)
-
-    def build(theme: Theme) -> go.Figure:
-        figure = go.Figure()
-        figure.add_trace(
-            go.Scatter(
-                x=x,
-                y=adjusted,
-                mode="markers",
-                name="climb blocks",
-                marker=dict(
-                    size=MARKER_SIZE,
-                    color=color_by,
-                    colorscale=colorscale(theme),
-                    showscale=True,
-                    colorbar=colorbar(color_title, theme),
-                    line=dict(width=1.5, color=theme.surface),
-                ),
-                customdata=np.column_stack([columns.vert_rate_ft_per_hr, columns.grade_frac * 100]),
-                hovertemplate=(
-                    f"{x_hover}<br>%{{y:,.0f}} ft/hr adjusted<br>%{{customdata[0]:,.0f}} ft/hr climbed · "
-                    "%{customdata[1]:.0f}% grade<extra></extra>"
-                ),
-            )
-        )
-        figure.add_trace(
-            go.Scatter(
-                x=line_x,
-                y=predict_line(line_x),
-                mode="lines",
-                name=line_name,
-                line=dict(color=theme.series[1], width=LINE_WIDTH),
-                hovertemplate=f"{x_hover} → %{{y:,.0f}} ft/hr model<extra></extra>",
-            )
-        )
-        figure.add_trace(
-            go.Scatter(
-                x=[standard_x],
-                y=[at_standard_ft_per_hr],
-                mode="markers",
-                name="this effort at standard conditions",
-                marker=dict(size=14, symbol="diamond", color=theme.series[2], line=dict(width=1.5, color=theme.surface)),
-                hovertemplate="%{y:,.0f} ft/hr at standard conditions<extra></extra>",
-            )
-        )
-        figure.update_layout(xaxis_title=x_title, yaxis_title="vertical rate (ft/hr, adjusted)")
-        return styled(figure, theme, height_px=500, has_legend=True)
-
-    return build
-
-
-def rate_vs_heart_rate(effort: Effort, model: ClimbModel, at_standard_ft_per_hr: float) -> dict:
-    columns = effort.columns
-    standard = STANDARD_CONDITIONS
-    build = rate_against(
-        effort,
-        model,
-        at_standard_ft_per_hr,
-        keep="heart_rate",
-        x=columns.heart_rate_bpm,
-        standard_x=standard.heart_rate_bpm,
-        x_title="heart rate (bpm)",
-        x_hover="HR %{x:.0f}",
-        color_by=columns.elevation_ft,
-        color_title="elevation<br>(ft)",
-        line_name=f"model: {model.hr_slope_ft_per_hr_per_bpm(standard):+.0f} ft/hr per bpm",
-        predict_line=lambda hr: model.predict_ft_per_hr(
-            hr, standard.elevation_ft, standard.grade_frac, standard.running_frac
-        ),
-    )
-    return panel(
-        "Vertical rate vs heart rate",
-        f"Each climb block moved through the model to {standard.elevation_ft:,.0f} ft, "
-        f"{standard.grade_frac:.0%} grade and {gait_text(standard.running_frac)}, so what's left is heart rate; "
-        "color is the block's real elevation. The diamond is this effort's rate at standard conditions: its blocks' "
-        f"average, at {standard.heart_rate_bpm:.0f} bpm.",
-        build,
-    )
-
-
-def rate_vs_elevation(effort: Effort, model: ClimbModel, at_standard_ft_per_hr: float) -> dict:
-    columns = effort.columns
-    standard = STANDARD_CONDITIONS
-    build = rate_against(
-        effort,
-        model,
-        at_standard_ft_per_hr,
-        keep="elevation",
-        x=columns.elevation_ft,
-        standard_x=standard.elevation_ft,
-        x_title="elevation (ft)",
-        x_hover="%{x:,.0f} ft",
-        color_by=columns.heart_rate_bpm,
-        color_title="heart rate<br>(bpm)",
-        line_name=f"model: {model.elevation_slope_ft_per_hr_per_ft(standard) * 1000:+.0f} ft/hr per 1,000 ft",
-        predict_line=lambda elevation_ft: model.predict_ft_per_hr(
-            standard.heart_rate_bpm, elevation_ft, standard.grade_frac, standard.running_frac
-        ),
-    )
-    return panel(
-        "Vertical rate vs elevation",
-        f"Each climb block moved through the model to {standard.heart_rate_bpm:.0f} bpm, "
-        f"{standard.grade_frac:.0%} grade and {gait_text(standard.running_frac)}, so what's left is elevation; "
-        "color is the block's real heart rate. The diamond is this effort's rate at standard conditions, at "
-        f"{standard.elevation_ft:,.0f} ft.",
-        build,
-    )
-
-
 # ---- Every effort ----
 
 COVERAGE_HR_BIN_BPM = 5.0
@@ -726,6 +577,11 @@ def effort_label(effort: Effort) -> str:
     return f"{effort.activity.name} ({effort.activity.start_local:%b} {effort.activity.start_local.day})"
 
 
+def model_efforts_other_than(overview: FitnessOverview, effort: Effort | None) -> list[Effort]:
+    """The efforts the model is fit on, leaving out `effort` if it's one of them."""
+    return [e for e in overview.efforts if e.id in overview.membership and (effort is None or e.id != effort.id)]
+
+
 def coverage_hover(hr_low_bpm: float, elevation_low_ft: float, minutes_by_effort: dict[str, float]) -> str:
     ranges = (
         f"{hr_low_bpm:.0f}–{hr_low_bpm + COVERAGE_HR_BIN_BPM:.0f} bpm · "
@@ -742,8 +598,7 @@ def model_coverage(overview: FitnessOverview, effort: Effort | None = None) -> d
     """Minutes of climbing the model is fit on, by heart rate and elevation, with every grade
     together. Given an effort, it's the model that effort is compared with, and the effort's blocks
     are drawn on top. None if the model is fit on nothing."""
-    leaving_out = effort.id if effort is not None and effort.id in overview.membership else None
-    fit_on = [e for e in overview.efforts if e.id in overview.membership and e.id != leaving_out]
+    fit_on = model_efforts_other_than(overview, effort)
     if not fit_on:
         return None
     shown = [*fit_on, *([effort] if effort is not None else [])]
@@ -813,7 +668,7 @@ def model_coverage(overview: FitnessOverview, effort: Effort | None = None) -> d
             "Minutes of climbing the model is fit on, by heart rate and elevation, with every grade together. Where "
             "cells are blank, the model has no climbing and is extrapolating. Hover a cell for the efforts in it."
         )
-    elif leaving_out is not None:
+    elif effort.id in overview.membership:
         caption = (
             "Minutes of climbing in the model this effort is compared with, which leaves it out, by heart rate and "
             "elevation; its own climb blocks are on top. Where they land on blank cells, the comparison extrapolates."
@@ -823,8 +678,254 @@ def model_coverage(overview: FitnessOverview, effort: Effort | None = None) -> d
             "Minutes of climbing the model is fit on, by heart rate and elevation; this effort's climb blocks are on "
             "top. Where they land on blank cells, the comparison extrapolates."
         )
-    # Not usually the first thing to look at, so it waits to be opened.
-    return panel("Model coverage", caption, build, starts_collapsed=True)
+    return panel("Coverage", caption, build)
+
+
+def adjusted_ft_per_hr(model: ClimbModel, columns: BlockColumns, keep: str) -> np.ndarray:
+    """Each block's rate moved through the model to the standard conditions, except in `keep`, which
+    is "heart_rate" or "elevation".
+
+    A line through the raw cloud against one variable would mix in the others. Moved to common
+    conditions in the others, the points line up with the model's line in the kept one, and still
+    show whether that relationship is really straight. Grade and gait are always moved, so every
+    block's power is spent on the same terrain.
+    """
+    standard = STANDARD_CONDITIONS
+    adjusted_w_per_kg = columns.power_w_per_kg
+    if keep != "heart_rate":
+        adjusted_w_per_kg = adjusted_w_per_kg - model.hr_slope_w_per_kg_per_bpm * (
+            columns.heart_rate_bpm - standard.heart_rate_bpm
+        )
+    if keep != "elevation":
+        adjusted_w_per_kg = adjusted_w_per_kg - model.elevation_slope_w_per_kg_per_ft * (
+            columns.elevation_ft - standard.elevation_ft
+        )
+    return adjusted_w_per_kg * ft_per_hr_per_w_per_kg(standard.grade_frac, standard.running_frac)
+
+
+def gait_text(running_frac: float) -> str:
+    if running_frac == 0:
+        return "hiking"
+    if running_frac == 1:
+        return "running"
+    return f"{running_frac:.0%} running"
+
+
+@dataclass(frozen=True)
+class RateVariable:
+    """What a vertical rate plot is drawn against. Every other condition is moved through the model
+    to the standard one, and the other of heart rate and elevation colors the blocks."""
+
+    # As adjusted_ft_per_hr takes it.
+    keep: str
+    name: str
+    axis_title: str
+    # Hover text for a block's value, as a plotly template of %{x}.
+    x_hover: str
+    values: Callable[[BlockColumns], np.ndarray]
+    standard_value: float
+    standard_text: str
+    # The standard conditions the blocks are moved to, in words.
+    moved_to_text: str
+    color_name: str
+    color_title: str
+    color_values: Callable[[BlockColumns], np.ndarray]
+    # The model's rate at each value, with every other condition standard.
+    predict_line: Callable[[np.ndarray], np.ndarray]
+    line_name: str
+
+
+def heart_rate_variable(model: ClimbModel) -> RateVariable:
+    standard = STANDARD_CONDITIONS
+    return RateVariable(
+        keep="heart_rate",
+        name="heart rate",
+        axis_title="heart rate (bpm)",
+        x_hover="HR %{x:.0f}",
+        values=lambda columns: columns.heart_rate_bpm,
+        standard_value=standard.heart_rate_bpm,
+        standard_text=f"{standard.heart_rate_bpm:.0f} bpm",
+        moved_to_text=(
+            f"{standard.elevation_ft:,.0f} ft, {standard.grade_frac:.0%} grade and {gait_text(standard.running_frac)}"
+        ),
+        color_name="elevation",
+        color_title="elevation<br>(ft)",
+        color_values=lambda columns: columns.elevation_ft,
+        predict_line=lambda heart_rate_bpm: model.predict_ft_per_hr(
+            heart_rate_bpm, standard.elevation_ft, standard.grade_frac, standard.running_frac
+        ),
+        line_name=f"model: {model.hr_slope_ft_per_hr_per_bpm(standard):+.0f} ft/hr per bpm",
+    )
+
+
+def elevation_variable(model: ClimbModel) -> RateVariable:
+    standard = STANDARD_CONDITIONS
+    return RateVariable(
+        keep="elevation",
+        name="elevation",
+        axis_title="elevation (ft)",
+        x_hover="%{x:,.0f} ft",
+        values=lambda columns: columns.elevation_ft,
+        standard_value=standard.elevation_ft,
+        standard_text=f"{standard.elevation_ft:,.0f} ft",
+        moved_to_text=(
+            f"{standard.heart_rate_bpm:.0f} bpm, {standard.grade_frac:.0%} grade and "
+            f"{gait_text(standard.running_frac)}"
+        ),
+        color_name="heart rate",
+        color_title="heart rate<br>(bpm)",
+        color_values=lambda columns: columns.heart_rate_bpm,
+        predict_line=lambda elevation_ft: model.predict_ft_per_hr(
+            standard.heart_rate_bpm, elevation_ft, standard.grade_frac, standard.running_frac
+        ),
+        line_name=f"model: {model.elevation_slope_ft_per_hr_per_ft(standard) * 1000:+.0f} ft/hr per 1,000 ft",
+    )
+
+
+@dataclass(frozen=True)
+class PlottedBlocks:
+    """Climb blocks as a rate plot draws them: moved to standard conditions in all but one variable."""
+
+    columns: BlockColumns
+    x: np.ndarray
+    adjusted_ft_per_hr: np.ndarray
+    # The effort each block is from.
+    effort_labels: list[str]
+
+    @classmethod
+    def of(cls, efforts: list[Effort], model: ClimbModel, variable: RateVariable) -> "PlottedBlocks":
+        columns = BlockColumns.of([b for e in efforts for b in e.blocks])
+        return cls(
+            columns=columns,
+            x=variable.values(columns),
+            adjusted_ft_per_hr=adjusted_ft_per_hr(model, columns, variable.keep),
+            effort_labels=[effort_label(e) for e in efforts for _ in e.blocks],
+        )
+
+    def trace(self, variable: RateVariable, name: str, marker: dict) -> go.Scatter:
+        return go.Scatter(
+            x=self.x,
+            y=self.adjusted_ft_per_hr,
+            mode="markers",
+            name=name,
+            marker=marker,
+            customdata=[
+                [label, rate, grade_pct]
+                for label, rate, grade_pct in zip(
+                    self.effort_labels,
+                    self.columns.vert_rate_ft_per_hr.tolist(),
+                    (self.columns.grade_frac * 100).tolist(),
+                )
+            ],
+            hovertemplate=(
+                f"%{{customdata[0]}}<br>{variable.x_hover}<br>%{{y:,.0f}} ft/hr adjusted<br>"
+                "%{customdata[1]:,.0f} ft/hr climbed · %{customdata[2]:.0f}% grade<extra></extra>"
+            ),
+        )
+
+
+# Every block the model is fit on makes a crowded plot, so its points are smaller than one effort's.
+MODEL_MARKER_SIZE = 6
+
+
+def rate_against(overview: FitnessOverview, variable: RateVariable, effort: Effort | None) -> dict:
+    """Vertical rate against `variable`, over every climb block the model is fit on, with the
+    model's line. Given an effort, its blocks are drawn in color over the others' in grey, whether
+    or not the model is fit on it."""
+    model = overview.model
+    standard = STANDARD_CONDITIONS
+    others = PlottedBlocks.of(model_efforts_other_than(overview, effort), model, variable)
+    highlighted = None if effort is None else PlottedBlocks.of([effort], model, variable)
+    every_x = np.concatenate([others.x, *([highlighted.x] if highlighted else []), [variable.standard_value]])
+    line_x = np.linspace(every_x.min(), every_x.max(), 50)
+    if effort is None:
+        diamond_name = "model at standard conditions"
+        diamond_ft_per_hr = model.predict_at(standard)
+    else:
+        diamond_name = "this effort at standard conditions"
+        diamond_ft_per_hr = overview.scores[effort.id].at_standard_ft_per_hr
+
+    def build(theme: Theme) -> go.Figure:
+        def colored(blocks: PlottedBlocks, size: int) -> dict:
+            return dict(
+                size=size,
+                color=variable.color_values(blocks.columns),
+                colorscale=colorscale(theme),
+                showscale=True,
+                colorbar=colorbar(variable.color_title, theme),
+                line=dict(width=1, color=theme.surface),
+            )
+
+        figure = go.Figure()
+        if highlighted is None:
+            figure.add_trace(others.trace(variable, "climb blocks", colored(others, MODEL_MARKER_SIZE)))
+        else:
+            figure.add_trace(
+                others.trace(
+                    # Faint, so even this effort's palest blocks stand out from them.
+                    variable,
+                    "other efforts' climb blocks",
+                    dict(size=MODEL_MARKER_SIZE, color=theme.muted, opacity=0.25),
+                )
+            )
+            figure.add_trace(highlighted.trace(variable, "this effort's climb blocks", colored(highlighted, MARKER_SIZE)))
+        figure.add_trace(
+            go.Scatter(
+                x=line_x,
+                y=variable.predict_line(line_x),
+                mode="lines",
+                name=variable.line_name,
+                line=dict(color=theme.series[1], width=LINE_WIDTH),
+                hovertemplate=f"{variable.x_hover} → %{{y:,.0f}} ft/hr model<extra></extra>",
+            )
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=[variable.standard_value],
+                y=[diamond_ft_per_hr],
+                mode="markers",
+                name=diamond_name,
+                marker=dict(size=14, symbol="diamond", color=theme.series[2], line=dict(width=1.5, color=theme.surface)),
+                hovertemplate=f"%{{y:,.0f}} ft/hr {diamond_name}<extra></extra>",
+            )
+        )
+        figure.update_layout(xaxis_title=variable.axis_title, yaxis_title="vertical rate (ft/hr, adjusted)")
+        return styled(figure, theme, height_px=500, has_legend=True)
+
+    moved = f"moved through the model to {variable.moved_to_text}, so what's left is {variable.name}"
+    if effort is None:
+        caption = (
+            f"Every climb block the model is fit on, {moved}; color is the block's real {variable.color_name}. "
+            f"The diamond is the model's rate at standard conditions, at {variable.standard_text}. Hover a block "
+            "for its effort."
+        )
+    else:
+        others_text = (
+            "the other efforts the model is fit on" if effort.id in overview.membership else "the efforts the model is fit on"
+        )
+        caption = (
+            f"Climb blocks {moved}. This effort's are colored by their real {variable.color_name}, and {others_text} "
+            "are grey. The line is the current model. The diamond is this effort's rate at standard conditions: its "
+            f"blocks' average, at {variable.standard_text}."
+        )
+    return panel(f"Vertical rate vs {variable.name}", caption, build)
+
+
+def model_details(overview: FitnessOverview, effort: Effort | None = None) -> dict:
+    """The climbing the model is fit on: where it lies in heart rate and elevation, and its rates
+    against each. Given an effort, its blocks are picked out in each. Needs a model."""
+    model = overview.model
+    coverage = model_coverage(overview, effort)
+    return panel_group(
+        "Model details",
+        [
+            *([coverage] if coverage is not None else []),
+            rate_against(overview, heart_rate_variable(model), effort),
+            rate_against(overview, elevation_variable(model), effort),
+        ],
+        # Not usually the first thing to look at, so it waits to be opened.
+        starts_collapsed=True,
+    )
 
 
 def fitness_trend(overview: FitnessOverview) -> dict:

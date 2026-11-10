@@ -221,7 +221,10 @@ An **effort** is a hike, trail run or race whose recording has heart rate and at
 
 **Which efforts the model uses.** By default, the efforts from the 60 days before the latest one. If that's fewer than 5, it uses the latest 5. In the efforts table, **Require** puts an effort in the model whatever its date, and **Exclude** keeps one out, e.g. a weighted carry. The elevation term only holds for elevations the model was fit on. So when comparing efforts at different elevations, require some efforts that span them.
 
-**Model coverage**, collapsed until you open it, is a heatmap of the minutes of climbing the model is fit on, by heart rate (5 bpm bins) and elevation (500 ft bins). It leaves grade out, as grade varies least of the three. Blank cells are where the model extrapolates. Hover over a cell to see which efforts are in it. It stays open and redraws as you require or exclude efforts, so you can watch a gap fill.
+**Model details**, collapsed until you open it, shows the climbing the model is fit on. It stays open and redraws as you require or exclude efforts, so you can watch a gap fill.
+
+- **Coverage** is a heatmap of the minutes of climbing, by heart rate (5 bpm bins) and elevation (500 ft bins). It leaves grade out, as grade varies least of the three. Blank cells are where the model extrapolates. Hover over a cell to see which efforts are in it.
+- **Vertical rate vs heart rate** and **vs elevation** plot every climb block, moved through the model to the standard conditions in everything but the variable on the x-axis, with the model's line. Hover over a block to see which effort it's from.
 
 **Scores.** Each effort gets two numbers:
 
@@ -236,8 +239,7 @@ An **effort** is a hike, trail run or race whose recording has heart rate and at
 An effort's page also shows its scores, and:
 
 - its climbing rate block by block, against what the model predicted, at 120 bpm or more;
-- under **Model coverage**, the heatmap for the model it's compared with, with the effort's own blocks drawn on top, so you can see where the comparison extrapolates;
-- its climbing rate against heart rate and against elevation, with the model's line.
+- under **Model details**, the same three plots with the effort's own blocks picked out: on the coverage heatmap, drawn over the model it's compared with, so you can see where the comparison extrapolates; on the rate plots, in color over the other efforts' blocks in grey.
 
 **The heart rate lag.** Heart rate trails the effort that produced it, so each block is paired with the heart rate 45 s later. That's a typical lag, not a measured one: correlating heart rate with climbing rate never gave a convincing lag on these recordings. A different heart rate monitor may lag differently, so revisit `HR_LAG_S` in `trail_trainer/climb_blocks.py` after changing monitors.
 

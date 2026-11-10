@@ -8,7 +8,7 @@ import pytest
 from test_climbing import blocks_following
 from trail_trainer import fitness
 from trail_trainer.app import app
-from trail_trainer.fitness_plots import model_coverage
+from trail_trainer.fitness_plots import model_coverage, model_details
 from trail_trainer.climb_blocks import ClimbBlock
 from trail_trainer.fitness import (
     MIN_MODELLED_HEART_RATE_BPM,
@@ -120,6 +120,39 @@ def test_coverage_counts_the_climbing_the_model_is_fit_on():
     assert "this effort's climb blocks" in [trace.get("name") for trace in explored["figure"]["light"]["data"]]
 
 
+def blocks_by_trace(panel: dict) -> dict[str, int]:
+    """How many climb blocks each trace of a rate plot draws, counted by their hover data: plotly
+    sends numpy arrays, like their x, encoded."""
+    return {trace["name"]: len(trace["customdata"]) for trace in panel["figure"]["light"]["data"] if "customdata" in trace}
+
+
+def test_model_details_plot_every_block_the_model_is_fit_on():
+    usual = effort("usual", 1, blocks=blocks_following(-2.0, 0.06, -0.0002))
+    faster = effort("faster", 0, blocks=blocks_following(-2.0, 0.06, -0.0002, seed=1, extra_w_per_kg=0.6))
+    outside = effort("outside", 2, ModelChoice.EXCLUDE, blocks=blocks_following(-2.0, 0.06, -0.0002, seed=2))
+    efforts = [faster, usual, outside]
+    membership = model_membership(efforts)
+    model = fitness.fit_climb_model(fitness.model_blocks(efforts, membership))
+    scores = {e.id: fitness.effort_score(e, model, comparison_model(e, efforts, membership, model)) for e in efforts}
+    overview = FitnessOverview(efforts, membership, model, None, scores, {})
+    rate_titles = ["Vertical rate vs heart rate", "Vertical rate vs elevation"]
+
+    overall = model_details(overview)
+    assert overall["starts_collapsed"]
+    assert [p["title"] for p in overall["panels"]] == ["Coverage", *rate_titles]
+    for rate_panel in overall["panels"][1:]:
+        assert blocks_by_trace(rate_panel)["climb blocks"] == model.num_blocks
+
+    # An effort's own blocks are picked out from the others the model is fit on, whether it's one of them or not.
+    for explored, others in [(faster, [usual]), (outside, [usual, faster])]:
+        details = model_details(overview, explored)
+        assert [p["title"] for p in details["panels"]] == ["Coverage", *rate_titles]
+        for rate_panel in details["panels"][1:]:
+            counts = blocks_by_trace(rate_panel)
+            assert counts["this effort's climb blocks"] == len(explored.blocks)
+            assert counts["other efforts' climb blocks"] == sum(len(e.blocks) for e in others)
+
+
 @pytest.fixture
 def activity_files_dir(tmp_path):
     files_dir = tmp_path / "activity_files"
@@ -199,11 +232,16 @@ def test_fitness_endpoints(client):
     # Nothing is left to fit a model from without it.
     assert only["vs_model_frac"] is None
     assert summary["trend"]["figure"]["light"]["data"]
+    assert [p["title"] for p in summary["model_details"]["panels"]] == [
+        "Coverage", "Vertical rate vs heart rate", "Vertical rate vs elevation"
+    ]
 
     detail = client.get("/api/fitness/activities/1").json
     assert detail["effort"]["id"] == "1" and detail["not_effort_reason"] is None
-    assert [p["title"] for p in detail["panels"]] == [
-        "Elevation and grade", "Climbing", "Vertical rate vs heart rate", "Vertical rate vs elevation"
+    assert [p["title"] for p in detail["panels"]] == ["Elevation and grade", "Climbing", "Model details"]
+    # With no other effort in the model, there's no coverage to compare it with.
+    assert [p["title"] for p in detail["panels"][-1]["panels"]] == [
+        "Vertical rate vs heart rate", "Vertical rate vs elevation"
     ]
     assert client.get("/api/fitness/activities/2").status_code == 404
     assert client.get("/api/fitness/explorable-ids").json == ["1"]

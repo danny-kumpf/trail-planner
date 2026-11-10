@@ -26,6 +26,8 @@
   details.panel > summary h2 { display: inline; }
   details.panel:not([open]) { padding-bottom: 16px; }
   .panel .caption { margin: 0 0 8px; font-size: 0.9rem; }
+  .subpanel { margin-top: 20px; }
+  .subpanel h3 { margin: 0 0 4px; font-size: 1rem; color: var(--text); }
   .status { color: var(--muted); }
   .status.warn { color: var(--warn); }
   .table-scroll { overflow-x: auto; }
@@ -197,9 +199,9 @@ async function load() {
   renderModel(fitness);
   $("charts").replaceChildren();
   drawnFigures.length = 0;
-  if (fitness.coverage) await appendPanel($("charts"), fitness.coverage);
+  if (fitness.model_details) await appendPanel($("charts"), fitness.model_details);
   if (fitness.trend) {
-    const plot = await appendPanel($("charts"), fitness.trend);
+    const [plot] = await appendPanel($("charts"), fitness.trend);
     plot.on("plotly_click", (event) => {
       const [activityId] = event.points[0].customdata;
       window.location.href = `/fitness/activities/${encodeURIComponent(activityId)}`;
