@@ -1,6 +1,6 @@
 """Import a Strava account export ("Download or delete your account") into the training log.
 
-Usage: uv run python -m trail_planner.import_strava_export recorded_activities/export_<id>.zip
+Usage: uv run python -m trail_trainer.import_strava_export recorded_activities/export_<id>.zip
 
 Each activity's recording is copied into activity_files/, and its entry in training_log.json gets
 Strava's summary (`strava`) and our numbers (`recorded`). Hand edits (`manual`) are kept, so the
@@ -20,10 +20,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from trail_planner.activity_stats import is_logged, recorded_block
-from trail_planner.json_store import write_entries
-from trail_planner.recording import read_recording
-from trail_planner.training_log import (
+from trail_trainer.activity_stats import is_logged, recorded_block
+from trail_trainer.json_store import write_entries
+from trail_trainer.recording import read_recording
+from trail_trainer.training_log import (
     DEFAULT_ACTIVITY_FILES_DIR,
     DEFAULT_LOG_PATH,
     new_entry,

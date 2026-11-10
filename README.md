@@ -1,10 +1,36 @@
-# Trail Planner
+# Trail Trainer
 
-A weekly training planner for trail running and hiking. You give it the vert and running miles you want this week, and it picks a set of trails that hits the vert within a small tolerance and has enough runnable terrain for the running target.
+[README text and code implementation by Claude Opus 5.5]
 
-Why: when every workout is a trail outing of at least an hour, you can't raise the weekly load by adding 10 minutes to a run. But trails differ in vert, so combinations of them give fine-grained control over the weekly total. This tool searches those combinations.
+A local web app for training for trail running and hiking. It has three tabs: one plans the week's outings, one logs what you did, and one tracks how fast you climb.
 
-It plans single weeks only. Long-term progression (e.g. +10% vert per week) is up to you.
+**Trail Planning.** You give it the vert and running miles you want this week. It picks a set of trails that hits the vert within a small tolerance and has enough runnable terrain for the running target. When every workout is a trail outing of at least an hour, you can't raise the weekly load by adding 10 minutes to a run. Trails differ in vert, though, so combinations of them give fine-grained control over the weekly total. It plans one week at a time; long-term progression is up to you.
+
+**Training Log.** Your Strava activities on a calendar, by week, month or year, with each period's vert, time, distance and running miles. Running miles come from each recording's cadence and pace, so the running stretches of a hike count. You can grade activities and correct their numbers.
+
+**Fitness.** A model of climbing rate against heart rate and elevation, fit to your recent efforts. Each effort gets a climbing rate at standard conditions, so efforts on different days and terrain can be compared over time. Each effort also has its own page, which shows its climbs and how they compare with the model.
+
+## Screenshots
+
+**Trail Planning:** pick a week of trails that hits a vert target.
+
+![Trail Planning tab](docs/screenshots/trail_planning.png)
+
+**Training Log:** every activity from Strava, week by week.
+
+![Training Log tab](docs/screenshots/training_log.png)
+
+**Fitness:** a model of climbing rate against heart rate and elevation, and how each effort compares with it.
+
+![Fitness tab](docs/screenshots/fitness.png)
+
+Exploring one effort: its climbs, and its climb blocks against the model.
+
+![An effort's climbs](docs/screenshots/effort_climbing.png)
+
+![An effort's vertical rate vs heart rate](docs/screenshots/effort_rate_vs_heart_rate.png)
+
+![An effort's vertical rate vs elevation](docs/screenshots/effort_rate_vs_elevation.png)
 
 ## How it works
 
@@ -46,7 +72,7 @@ uv sync
 ### Start the planner
 
 ```
-uv run python -m trail_planner.app
+uv run python -m trail_trainer.app
 ```
 
 Open http://localhost:5000. The site has three tabs at the top: **Trail Planning** (described here), **Training Log** (see [Training log](#training-log)) and **Fitness** (see [Fitness](#fitness)). On Trail Planning, enter your targets, set the outings range (default 1–6), the tolerance, and whether a trail may repeat within the week. Then click **Generate**, and **Shuffle** to step through the other plans until you get one you like. Below the plan, **Included Trails** expands to a table of every plannable trail with its vert, distance and runnable miles. Its **Require** and **Exclude** checkboxes put a trail in every plan (say, one you want to run this week) or keep it out of all of them (one you just ran); by default neither is checked. Your settings and these choices are kept for each week while the browser tab is open, so going to the Training Log and back doesn't reset them. Under that, **Excluded Trails** lists the ones that don't have all three yet.
@@ -68,7 +94,7 @@ The planning tab plans the current week, starting on the day weeks start on in t
 3. Run:
 
    ```
-   uv run python -m trail_planner.update_trails
+   uv run python -m trail_trainer.update_trails
    ```
 
 The script recalculates every GPX file each time it runs. A file that matches an existing entry in `available_trails.json` (ignoring case) updates that entry. A file with no matching entry gets a new one, named after the file in lowercase. The planner reads the JSON on every request, so there's no need to restart it.
@@ -108,7 +134,7 @@ Click any circle to edit the activity. You can give it a grade (A, B, C, D or F)
 To import the export: on strava.com, go to Settings → My Account → Download or delete your account. Then run:
 
 ```
-uv run python -m trail_planner.import_strava_export recorded_activities/export_<id>.zip
+uv run python -m trail_trainer.import_strava_export recorded_activities/export_<id>.zip
 ```
 
 The import copies each activity's original recording (FIT or GPX) into `activity_files/`, named by Strava activity id. It then adds the activity to `training_log.json`. Once imported, the zip isn't needed. Running the import again, e.g. with a newer export, updates every activity and keeps your edits.
@@ -180,7 +206,7 @@ How each value in `recorded` is computed:
 After changing any of these methods, recompute every activity from the stored files. This keeps your edits:
 
 ```
-uv run python -m trail_planner.rebuild_training_log
+uv run python -m trail_trainer.rebuild_training_log
 ```
 
 ### Fitness
@@ -213,9 +239,9 @@ An effort's page also shows its scores, and:
 - under **Model coverage**, the heatmap for the model it's compared with, with the effort's own blocks drawn on top, so you can see where the comparison extrapolates;
 - its climbing rate against heart rate and against elevation, with the model's line.
 
-**The heart rate lag.** Heart rate trails the effort that produced it, so each block is paired with the heart rate 45 s later. That's a typical lag, not a measured one: correlating heart rate with climbing rate never gave a convincing lag on these recordings. A different heart rate monitor may lag differently, so revisit `HR_LAG_S` in `trail_planner/climb_blocks.py` after changing monitors.
+**The heart rate lag.** Heart rate trails the effort that produced it, so each block is paired with the heart rate 45 s later. That's a typical lag, not a measured one: correlating heart rate with climbing rate never gave a convincing lag on these recordings. A different heart rate monitor may lag differently, so revisit `HR_LAG_S` in `trail_trainer/climb_blocks.py` after changing monitors.
 
-**Stored climb blocks.** Working out an activity's climb blocks takes about half a second, so they're kept in `climb_blocks.json`. Each entry records what it was computed from: the recording, Strava's crop and the analysis version. An entry is redone when any of those changes. The first visit to the tab computes every activity's, which takes about half a minute. After changing how climbs are found or blocks are cut, increase `CLIMB_ANALYSIS_VERSION` in `trail_planner/climb_blocks.py` so they're computed again. Deleting the file has the same effect.
+**Stored climb blocks.** Working out an activity's climb blocks takes about half a second, so they're kept in `climb_blocks.json`. Each entry records what it was computed from: the recording, Strava's crop and the analysis version. An entry is redone when any of those changes. The first visit to the tab computes every activity's, which takes about half a minute. After changing how climbs are found or blocks are cut, increase `CLIMB_ANALYSIS_VERSION` in `trail_trainer/climb_blocks.py` so they're computed again. Deleting the file has the same effect.
 
 The model covers climbing only. Running on flat ground and downhill are limited by different things and aren't modelled yet.
 
@@ -225,43 +251,66 @@ The model covers climbing only. Running on flat ground and downhill are limited 
 uv run pytest
 ```
 
+### Update the README screenshots
+
+The screenshots above are rendered from the running site by a headless browser, using this checkout's data. To set it up, install the browser once:
+
+```
+uv run playwright install chromium
+```
+
+and turn on the repo's git hooks:
+
+```
+git config core.hooksPath .githooks
+```
+
+From then on, any commit that changes something in `trail_trainer/` renders the screenshots again and adds them to the commit. That takes about 10 seconds. To skip it for one commit, use `git commit --no-verify`. To render them without committing:
+
+```
+uv run python -m trail_trainer.readme_screenshots
+```
+
 ## Project layout
 
 | Path | Purpose |
 |---|---|
 | `available_trails.json` | Trail catalog: GPX-derived stats plus manual overrides |
 | `gpx/` | Route GPX files, one per trail |
-| `trail_planner/trail_stats.py` | GPX → distance, vert, runnable miles (smoothing and grade settings live here) |
-| `trail_planner/update_trails.py` | Script that writes GPX stats into the catalog |
-| `trail_planner/trails.py` | Loads the catalog, applying manual overrides |
-| `trail_planner/planner.py` | Shuffle algorithm |
+| `trail_trainer/trail_stats.py` | GPX → distance, vert, runnable miles (smoothing and grade settings live here) |
+| `trail_trainer/update_trails.py` | Script that writes GPX stats into the catalog |
+| `trail_trainer/trails.py` | Loads the catalog, applying manual overrides |
+| `trail_trainer/planner.py` | Shuffle algorithm |
 | `week_plans.json` | Plans saved for each week, with the settings they were shuffled with |
-| `trail_planner/week_plans.py` | Saves and loads the plans for each week |
-| `trail_planner/effort.py` | Recording → running and hiking miles (by cadence, or by pace alone), heart rate |
+| `trail_trainer/week_plans.py` | Saves and loads the plans for each week |
+| `trail_trainer/effort.py` | Recording → running and hiking miles (by cadence, or by pace alone), heart rate |
 | `training_log.json` | Training log: Strava's summary, our numbers and your edits for every activity |
 | `activity_files/` | Each activity's recording (FIT or GPX from the export, or streams from a sync), named by Strava activity id |
-| `trail_planner/recording.py` | Reads FIT and GPX files and Strava's streams into one form; moving time |
-| `trail_planner/activity_stats.py` | Strava summary + recording → the numbers the training log shows |
-| `trail_planner/training_log.py` | Loads the training log, applying overrides; validates edits |
-| `trail_planner/import_strava_export.py` | Script that imports a Strava account export into the training log |
-| `trail_planner/rebuild_training_log.py` | Script that recomputes the training log from the stored recordings |
-| `trail_planner/strava_api.py` | Strava's API: approving access, refreshing tokens, reading activities |
-| `trail_planner/strava_sync.py` | Brings the training log up to date with Strava |
+| `trail_trainer/recording.py` | Reads FIT and GPX files and Strava's streams into one form; moving time |
+| `trail_trainer/activity_stats.py` | Strava summary + recording → the numbers the training log shows |
+| `trail_trainer/training_log.py` | Loads the training log, applying overrides; validates edits |
+| `trail_trainer/import_strava_export.py` | Script that imports a Strava account export into the training log |
+| `trail_trainer/rebuild_training_log.py` | Script that recomputes the training log from the stored recordings |
+| `trail_trainer/strava_api.py` | Strava's API: approving access, refreshing tokens, reading activities |
+| `trail_trainer/strava_sync.py` | Brings the training log up to date with Strava |
 | `strava_app.json`, `strava_tokens.json` | Your Strava API application, and the access it was given (keep private) |
-| `trail_planner/climb_signals.py` | Recording → vertical rate, grade, heart rate and gait on an even time grid |
-| `trail_planner/climb_blocks.py` | Sustained climbs, cut into the 45 s blocks the model is fit on (heart rate lag lives here) |
-| `trail_planner/climb_model.py` | The climbing model: power from heart rate and elevation, turned into a climbing rate by Minetti's cost of grade and gait |
-| `trail_planner/fitness.py` | Which efforts the model uses, each effort's scores, and the stored climb blocks |
-| `trail_planner/fitness_plots.py` | The Fitness tab's figures |
+| `trail_trainer/climb_signals.py` | Recording → vertical rate, grade, heart rate and gait on an even time grid |
+| `trail_trainer/climb_blocks.py` | Sustained climbs, cut into the 45 s blocks the model is fit on (heart rate lag lives here) |
+| `trail_trainer/climb_model.py` | The climbing model: power from heart rate and elevation, turned into a climbing rate by Minetti's cost of grade and gait |
+| `trail_trainer/fitness.py` | Which efforts the model uses, each effort's scores, and the stored climb blocks |
+| `trail_trainer/fitness_plots.py` | The Fitness tab's figures |
 | `climb_blocks.json` | Each activity's climb blocks, kept so they needn't be recomputed |
-| `trail_planner/json_store.py` | Reading and writing the JSON data files |
-| `trail_planner/app.py` | Flask server for the pages and API |
-| `trail_planner/static/site.css` | Styles shared by every tab, including the tab bar |
-| `trail_planner/static/calendar.js` | Calendar days and weeks, and the week start day, shared by both tabs |
-| `trail_planner/static/trail_planning.html` | The Trail Planning tab |
-| `trail_planner/static/training_log.html` | The Training Log tab |
-| `trail_planner/static/fitness.html`, `fitness_activity.html` | The Fitness tab, and an activity's Explore page |
-| `trail_planner/static/fitness.js` | Drawing figures and formatting, shared by the Fitness pages |
+| `trail_trainer/json_store.py` | Reading and writing the JSON data files |
+| `trail_trainer/app.py` | Flask server for the pages and API |
+| `trail_trainer/static/site.css` | Styles shared by every tab, including the tab bar |
+| `trail_trainer/static/calendar.js` | Calendar days and weeks, and the week start day, shared by both tabs |
+| `trail_trainer/static/trail_planning.html` | The Trail Planning tab |
+| `trail_trainer/static/training_log.html` | The Training Log tab |
+| `trail_trainer/static/fitness.html`, `fitness_activity.html` | The Fitness tab, and an activity's Explore page |
+| `trail_trainer/static/fitness.js` | Drawing figures and formatting, shared by the Fitness pages |
+| `trail_trainer/readme_screenshots.py` | Script that renders the README's screenshots from the running site |
+| `docs/screenshots/` | The README's screenshots |
+| `.githooks/pre-commit` | Re-renders the screenshots when a commit changes the site |
 | `tests/` | Unit tests |
 
 ## Not yet supported

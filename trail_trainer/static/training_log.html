@@ -915,7 +915,7 @@ async function loadActivities() {
   $("message").hidden = true;
   if (!activities.length) {
     showMessage("No activities yet. Sync with Strava, or first import your Strava account export with: " +
-                "uv run python -m trail_planner.import_strava_export <export zip>");
+                "uv run python -m trail_trainer.import_strava_export <export zip>");
   }
   render();
 }

@@ -10,9 +10,9 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal import savgol_filter
 
-from trail_planner.effort import recorded_track_from_recording, running_steps
-from trail_planner.recording import DEFAULT_MIN_MOVING_SPEED_M_PER_S, Recording
-from trail_planner.trail_stats import FT_PER_M, profile_from_along_track
+from trail_trainer.effort import recorded_track_from_recording, running_steps
+from trail_trainer.recording import DEFAULT_MIN_MOVING_SPEED_M_PER_S, Recording
+from trail_trainer.trail_stats import FT_PER_M, profile_from_along_track
 
 RESAMPLE_INTERVAL_S = 1.0
 # Elevation against time is smoothed over this long before it's differentiated for vertical rate.

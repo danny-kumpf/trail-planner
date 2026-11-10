@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from trail_planner import app as app_module
-from trail_planner.trails import load_trails
-from trail_planner.update_trails import update_trails
+from trail_trainer import app as app_module
+from trail_trainer.trails import load_trails
+from trail_trainer.update_trails import update_trails
 
 SAMPLE_GPX = Path(__file__).resolve().parent.parent / "gpx" / "Green_from_NCAR.gpx"
 

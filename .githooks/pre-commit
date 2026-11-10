@@ -1,0 +1,16 @@
+#!/bin/sh
+# When a commit changes the site (anything in trail_trainer/), re-render the README's screenshots
+# and add them to the commit. They're rendered from the working tree and your own data.
+# Enable once per clone with `git config core.hooksPath .githooks`; skip once with `git commit --no-verify`.
+
+if git diff --cached --quiet -- trail_trainer/; then
+  exit 0
+fi
+
+echo "Site changed: updating the README screenshots..."
+if ! uv run python -m trail_trainer.readme_screenshots; then
+  echo "Couldn't update the README screenshots, so the commit was stopped." >&2
+  echo "Fix the error above, or commit with --no-verify to skip updating them." >&2
+  exit 1
+fi
+git add docs/screenshots

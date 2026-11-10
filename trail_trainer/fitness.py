@@ -18,9 +18,9 @@ from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path
 
-from trail_planner.activity_stats import kept_recording
-from trail_planner.climb_blocks import CLIMB_ANALYSIS_VERSION, ClimbAnalysis, ClimbBlock, analyse_climbs
-from trail_planner.climb_model import (
+from trail_trainer.activity_stats import kept_recording
+from trail_trainer.climb_blocks import CLIMB_ANALYSIS_VERSION, ClimbAnalysis, ClimbBlock, analyse_climbs
+from trail_trainer.climb_model import (
     BlockColumns,
     ClimbConditions,
     ClimbModel,
@@ -28,8 +28,8 @@ from trail_planner.climb_model import (
     fit_climb_model,
     time_weighted_mean,
 )
-from trail_planner.training_log import Activity, ModelChoice, activity_from_entry, read_log
-from trail_planner.trails import PROJECT_ROOT
+from trail_trainer.training_log import Activity, ModelChoice, activity_from_entry, read_log
+from trail_trainer.trails import PROJECT_ROOT
 
 DEFAULT_CLIMB_BLOCKS_PATH = PROJECT_ROOT / "climb_blocks.json"
 # The model is fit from the efforts in this long before the latest one...

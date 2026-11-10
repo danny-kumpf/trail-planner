@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from trail_planner.trail_stats import (
+from trail_trainer.trail_stats import (
     FT_PER_M,
     M_PER_MI,
     ElevationProfile,

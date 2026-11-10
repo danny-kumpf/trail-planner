@@ -13,7 +13,7 @@ import random
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from trail_planner.trails import Trail
+from trail_trainer.trails import Trail
 
 # When nothing fits, recommend a tolerance that would give about this many plans to shuffle among.
 RECOMMENDED_NUM_OPTIONS = 10

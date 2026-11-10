@@ -4,7 +4,7 @@ import gpxpy
 import numpy as np
 import pytest
 
-from trail_planner.effort import (
+from trail_trainer.effort import (
     RecordedTrack,
     heart_rate_summary,
     ignore_brief_gait_changes,
@@ -14,8 +14,8 @@ from trail_planner.effort import (
     running_steps_by_gait,
     running_steps_by_pace,
 )
-from trail_planner.recording import recording_from_gpx
-from trail_planner.trail_stats import M_PER_MI
+from trail_trainer.recording import recording_from_gpx
+from trail_trainer.trail_stats import M_PER_MI
 
 START = datetime(2026, 8, 18, 16, 0, tzinfo=timezone.utc)
 M_PER_DEG_LAT = 111_195.0

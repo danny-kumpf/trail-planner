@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from trail_planner.climb_signals import ClimbSignals, climb_signals, true_runs
-from trail_planner.recording import Recording
+from trail_trainer.climb_signals import ClimbSignals, climb_signals, true_runs
+from trail_trainer.recording import Recording
 
 # How far heart rate trails the effort that produced it. Not a measured constant: correlating heart
 # rate against climbing rate never gave a lag credible enough to use on these recordings, so this

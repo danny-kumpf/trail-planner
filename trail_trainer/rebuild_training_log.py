@@ -1,15 +1,15 @@
 """Recompute every activity's `recorded` block from its Strava summary and recording file.
 
-Usage: uv run python -m trail_planner.rebuild_training_log
+Usage: uv run python -m trail_trainer.rebuild_training_log
 
 Run it after changing how vert, running or moving time are computed. Hand edits are untouched.
 """
 
 from pathlib import Path
 
-from trail_planner.activity_stats import recorded_for_entry
-from trail_planner.json_store import write_entries
-from trail_planner.training_log import DEFAULT_ACTIVITY_FILES_DIR, DEFAULT_LOG_PATH, read_log
+from trail_trainer.activity_stats import recorded_for_entry
+from trail_trainer.json_store import write_entries
+from trail_trainer.training_log import DEFAULT_ACTIVITY_FILES_DIR, DEFAULT_LOG_PATH, read_log
 
 
 def rebuild_training_log(log_path: Path, activity_files_dir: Path) -> dict[str, str]:

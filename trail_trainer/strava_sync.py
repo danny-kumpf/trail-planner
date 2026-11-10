@@ -22,10 +22,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from trail_planner.activity_stats import is_logged, recorded_for_entry
-from trail_planner.json_store import write_entries
-from trail_planner.strava_api import NotAuthorized, NotFound, RateLimited, StravaClient, StravaError
-from trail_planner.training_log import new_entry, read_log, remove_entry
+from trail_trainer.activity_stats import is_logged, recorded_for_entry
+from trail_trainer.json_store import write_entries
+from trail_trainer.strava_api import NotAuthorized, NotFound, RateLimited, StravaClient, StravaError
+from trail_trainer.training_log import new_entry, read_log, remove_entry
 
 
 @dataclass

@@ -10,11 +10,11 @@ from urllib.parse import parse_qs, urlsplit
 import numpy as np
 import pytest
 
-from trail_planner import app as app_module
-from trail_planner.activity_stats import recorded_block
-from trail_planner.import_strava_export import import_strava_export
-from trail_planner.recording import Recording, read_recording, recording_from_streams
-from trail_planner.strava_api import (
+from trail_trainer import app as app_module
+from trail_trainer.activity_stats import recorded_block
+from trail_trainer.import_strava_export import import_strava_export
+from trail_trainer.recording import Recording, read_recording, recording_from_streams
+from trail_trainer.strava_api import (
     MAX_ACTIVITIES_PER_PAGE,
     NotAuthorized,
     NotFound,
@@ -26,8 +26,8 @@ from trail_planner.strava_api import (
     load_tokens,
     save_tokens,
 )
-from trail_planner.strava_sync import sync
-from trail_planner.training_log import ActivityType, Grade, load_activities, set_manual
+from trail_trainer.strava_sync import sync
+from trail_trainer.training_log import ActivityType, Grade, load_activities, set_manual
 
 EXPORT_DIR = Path(__file__).resolve().parent / "data" / "strava_export"
 HIKE_FIT = EXPORT_DIR / "activities" / "21553533855.fit.gz"

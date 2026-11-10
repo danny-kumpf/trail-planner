@@ -3,8 +3,8 @@ from datetime import datetime
 
 import pytest
 
-from trail_planner.app import app
-from trail_planner.training_log import ActivityType, Grade, UnknownActivity, load_activities, set_manual
+from trail_trainer.app import app
+from trail_trainer.training_log import ActivityType, Grade, UnknownActivity, load_activities, set_manual
 
 RECORDED = {
     "name": "Treadmill hills",

@@ -1,6 +1,6 @@
 """Local web site with three tabs: shuffling weekly trail plans, a training log, and climbing fitness.
 
-Usage: uv run python -m trail_planner.app, then open http://localhost:5000
+Usage: uv run python -m trail_trainer.app, then open http://localhost:5000
 """
 
 import random
@@ -15,9 +15,9 @@ from urllib.parse import urlsplit
 import plotly
 from flask import Flask, jsonify, redirect, request, send_from_directory, url_for
 
-from trail_planner.climb_blocks import CLIMB_FLOOR_GRADE_FRAC
-from trail_planner.climb_model import ClimbModel
-from trail_planner.fitness import (
+from trail_trainer.climb_blocks import CLIMB_FLOOR_GRADE_FRAC
+from trail_trainer.climb_model import ClimbModel
+from trail_trainer.fitness import (
     DEFAULT_CLIMB_BLOCKS_PATH,
     MIN_EFFORT_CLIMBING_S,
     MIN_MODELLED_HEART_RATE_BPM,
@@ -32,7 +32,7 @@ from trail_planner.fitness import (
     fitness_overview,
     why_not_an_effort,
 )
-from trail_planner.fitness_plots import (
+from trail_trainer.fitness_plots import (
     elevation_and_grade,
     fitness_trend,
     model_coverage,
@@ -41,7 +41,7 @@ from trail_planner.fitness_plots import (
     rate_vs_heart_rate,
     track_overview,
 )
-from trail_planner.planner import (
+from trail_trainer.planner import (
     NoCombinations,
     NoPlanInTolerance,
     NoPlan,
@@ -51,10 +51,10 @@ from trail_planner.planner import (
     PlansFound,
     shuffle_plans,
 )
-from trail_planner.swaps import SwapOption, swap_options
-from trail_planner.trails import DEFAULT_GPX_DIR, DEFAULT_TRAILS_PATH, Trail, load_trails
-from trail_planner.update_trails import update_trails
-from trail_planner.strava_api import (
+from trail_trainer.swaps import SwapOption, swap_options
+from trail_trainer.trails import DEFAULT_GPX_DIR, DEFAULT_TRAILS_PATH, Trail, load_trails
+from trail_trainer.update_trails import update_trails
+from trail_trainer.strava_api import (
     DEFAULT_APP_PATH,
     DEFAULT_TOKENS_PATH,
     SCOPE,
@@ -71,8 +71,8 @@ from trail_planner.strava_api import (
     load_tokens,
     save_tokens,
 )
-from trail_planner.strava_sync import sync
-from trail_planner.training_log import (
+from trail_trainer.strava_sync import sync
+from trail_trainer.training_log import (
     DEFAULT_ACTIVITY_FILES_DIR,
     DEFAULT_LOG_PATH,
     Activity,
@@ -82,7 +82,7 @@ from trail_planner.training_log import (
     set_manual,
     set_model_choice,
 )
-from trail_planner.week_plans import (
+from trail_trainer.week_plans import (
     DEFAULT_WEEK_PLANS_PATH,
     WeekAlreadyPlanned,
     WeekPlan,

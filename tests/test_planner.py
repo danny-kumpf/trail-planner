@@ -5,8 +5,8 @@ from dataclasses import asdict
 
 import pytest
 
-import trail_planner.app as app_module
-from trail_planner.planner import (
+import trail_trainer.app as app_module
+from trail_trainer.planner import (
     NoCombinations,
     NoPlanInTolerance,
     NotEnoughRunnable,
@@ -15,7 +15,7 @@ from trail_planner.planner import (
     PlansFound,
     shuffle_plans,
 )
-from trail_planner.trails import Trail
+from trail_trainer.trails import Trail
 
 TRAILS = [
     Trail("a", distance_mi=4, vert_ft=1000, runnable_mi=1.0),

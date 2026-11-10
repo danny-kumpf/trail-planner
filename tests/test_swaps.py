@@ -3,10 +3,10 @@ from dataclasses import asdict
 
 import pytest
 
-from trail_planner import app as app_module
-from trail_planner.planner import Plan, PlanRequest
-from trail_planner.swaps import SwapRecommendation, swap_options
-from trail_planner.trails import Trail
+from trail_trainer import app as app_module
+from trail_trainer.planner import Plan, PlanRequest
+from trail_trainer.swaps import SwapRecommendation, swap_options
+from trail_trainer.trails import Trail
 
 
 def trail(name: str, vert_ft: float, runnable_mi: float = 1) -> Trail:

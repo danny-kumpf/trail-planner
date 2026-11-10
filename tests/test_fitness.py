@@ -6,11 +6,11 @@ from datetime import datetime, timedelta
 import pytest
 
 from test_climbing import blocks_following
-from trail_planner import fitness
-from trail_planner.app import app
-from trail_planner.fitness_plots import model_coverage
-from trail_planner.climb_blocks import ClimbBlock
-from trail_planner.fitness import (
+from trail_trainer import fitness
+from trail_trainer.app import app
+from trail_trainer.fitness_plots import model_coverage
+from trail_trainer.climb_blocks import ClimbBlock
+from trail_trainer.fitness import (
     MIN_MODELLED_HEART_RATE_BPM,
     MIN_RECENT_EFFORTS,
     MODEL_WINDOW,
@@ -23,7 +23,7 @@ from trail_planner.fitness import (
     modelled_blocks,
     vs_model_frac,
 )
-from trail_planner.training_log import ModelChoice, activity_from_entry, load_activities, set_manual, set_model_choice
+from trail_trainer.training_log import ModelChoice, activity_from_entry, load_activities, set_manual, set_model_choice
 
 FIT_HIKE = "21553533855.fit.gz"
 LATEST = datetime(2026, 10, 28, 9, 0)

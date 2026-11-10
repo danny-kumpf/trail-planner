@@ -1,5 +1,5 @@
 [project]
-name = "trail-planner"
+name = "trail-trainer"
 version = "0.1.0"
 description = "Weekly trail training planner: pick trails that hit a vert target"
 requires-python = ">=3.13"
@@ -14,6 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "playwright>=1.65.0",
     "pytest>=8.0",
 ]
 

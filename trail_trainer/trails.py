@@ -7,7 +7,7 @@ overrides, never written by code). A field's value is the manual one if set, els
 from dataclasses import dataclass
 from pathlib import Path
 
-from trail_planner.json_store import read_entries
+from trail_trainer.json_store import read_entries
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TRAILS_PATH = PROJECT_ROOT / "available_trails.json"

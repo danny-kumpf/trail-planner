@@ -14,7 +14,7 @@ import gpxpy
 import numpy as np
 from garmin_fit_sdk import Decoder, Stream
 
-from trail_planner.trail_stats import great_circle_steps_m
+from trail_trainer.trail_stats import great_circle_steps_m
 
 # FIT timestamps count seconds from this moment.
 FIT_EPOCH = datetime(1989, 12, 31, tzinfo=timezone.utc)

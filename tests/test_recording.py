@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from trail_planner.recording import Recording, moving_time_s, only_samples_with_position, read_recording
+from trail_trainer.recording import Recording, moving_time_s, only_samples_with_position, read_recording
 
 EXPORT_ACTIVITIES = Path(__file__).resolve().parent / "data" / "strava_export" / "activities"
 FIT_HIKE = EXPORT_ACTIVITIES / "21553533855.fit.gz"

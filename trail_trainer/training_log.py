@@ -16,8 +16,8 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-from trail_planner.json_store import read_entries, write_entries
-from trail_planner.trails import PROJECT_ROOT
+from trail_trainer.json_store import read_entries, write_entries
+from trail_trainer.trails import PROJECT_ROOT
 
 DEFAULT_LOG_PATH = PROJECT_ROOT / "training_log.json"
 DEFAULT_ACTIVITY_FILES_DIR = PROJECT_ROOT / "activity_files"

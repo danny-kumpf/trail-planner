@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from trail_planner.trails import PROJECT_ROOT
+from trail_trainer.trails import PROJECT_ROOT
 
 DEFAULT_APP_PATH = PROJECT_ROOT / "strava_app.json"
 DEFAULT_TOKENS_PATH = PROJECT_ROOT / "strava_tokens.json"

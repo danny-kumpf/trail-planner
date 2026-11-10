@@ -17,8 +17,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from trail_planner.climb_blocks import ClimbBlock
-from trail_planner.trail_stats import FT_PER_M
+from trail_trainer.climb_blocks import ClimbBlock
+from trail_trainer.trail_stats import FT_PER_M
 
 # One block per coefficient is the least a fit can be solved from.
 MIN_FIT_BLOCKS = 3

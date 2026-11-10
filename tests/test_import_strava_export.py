@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from trail_planner.import_strava_export import import_strava_export
-from trail_planner.rebuild_training_log import rebuild_training_log
-from trail_planner.training_log import ActivityType, Grade, grade_in_note, load_activities, set_manual
+from trail_trainer.import_strava_export import import_strava_export
+from trail_trainer.rebuild_training_log import rebuild_training_log
+from trail_trainer.training_log import ActivityType, Grade, grade_in_note, load_activities, set_manual
 
 EXPORT_DIR = Path(__file__).resolve().parent / "data" / "strava_export"
 HIKE_ID = "20397657728"  # "weighted carry": FIT with GPS, cadence, and "Grade: D" in its note

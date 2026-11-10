@@ -16,10 +16,10 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from trail_planner.climb_blocks import CLIMB_FLOOR_GRADE_FRAC, ClimbAnalysis, ClimbRun, heart_rate_after_lag
-from trail_planner.climb_model import BlockColumns, ClimbModel, ft_per_hr_per_w_per_kg
-from trail_planner.climb_signals import true_runs
-from trail_planner.fitness import (
+from trail_trainer.climb_blocks import CLIMB_FLOOR_GRADE_FRAC, ClimbAnalysis, ClimbRun, heart_rate_after_lag
+from trail_trainer.climb_model import BlockColumns, ClimbModel, ft_per_hr_per_w_per_kg
+from trail_trainer.climb_signals import true_runs
+from trail_trainer.fitness import (
     MIN_MODELLED_HEART_RATE_BPM,
     STANDARD_CONDITIONS,
     Effort,

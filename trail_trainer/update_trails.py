@@ -1,14 +1,14 @@
 """Recompute each trail's `from_gpx` stats from the GPX files, adding entries for new files.
 
-Usage: uv run python -m trail_planner.update_trails
+Usage: uv run python -m trail_trainer.update_trails
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
-from trail_planner.trail_stats import compute_track_stats
-from trail_planner.json_store import read_entries, write_entries
-from trail_planner.trails import DEFAULT_GPX_DIR, DEFAULT_TRAILS_PATH
+from trail_trainer.trail_stats import compute_track_stats
+from trail_trainer.json_store import read_entries, write_entries
+from trail_trainer.trails import DEFAULT_GPX_DIR, DEFAULT_TRAILS_PATH
 
 
 @dataclass(frozen=True)

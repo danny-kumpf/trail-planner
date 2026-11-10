@@ -7,16 +7,16 @@ from pathlib import Path
 
 import numpy as np
 
-from trail_planner.effort import (
+from trail_trainer.effort import (
     DEFAULT_PACE_ONLY_RUNNING_PACE_MIN_PER_MI,
     gait_split,
     heart_rate_summary,
     recorded_track_from_recording,
     running_steps,
 )
-from trail_planner.recording import Recording, moving_time_s, read_recording
-from trail_planner.trail_stats import FT_PER_M, M_PER_MI, profile_from_along_track, stats_from_profile
-from trail_planner.training_log import ActivityType
+from trail_trainer.recording import Recording, moving_time_s, read_recording
+from trail_trainer.trail_stats import FT_PER_M, M_PER_MI, profile_from_along_track, stats_from_profile
+from trail_trainer.training_log import ActivityType
 
 # Strava's activity types, with spaces removed and lowercased: the export writes "Backcountry
 # Ski" where the API writes "BackcountrySki". Anything else is a Workout.

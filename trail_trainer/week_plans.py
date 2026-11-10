@@ -9,9 +9,9 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 
-from trail_planner.json_store import read_entries, write_entries
-from trail_planner.planner import Plan, PlanRequest
-from trail_planner.trails import PROJECT_ROOT, Trail
+from trail_trainer.json_store import read_entries, write_entries
+from trail_trainer.planner import Plan, PlanRequest
+from trail_trainer.trails import PROJECT_ROOT, Trail
 
 DEFAULT_WEEK_PLANS_PATH = PROJECT_ROOT / "week_plans.json"
 

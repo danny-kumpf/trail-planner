@@ -3,10 +3,10 @@ from datetime import date
 
 import pytest
 
-from trail_planner import app as app_module
-from trail_planner.planner import Plan, PlanRequest
-from trail_planner.trails import Trail
-from trail_planner.week_plans import (
+from trail_trainer import app as app_module
+from trail_trainer.planner import Plan, PlanRequest
+from trail_trainer.trails import Trail
+from trail_trainer.week_plans import (
     WeekAlreadyPlanned,
     WeekPlan,
     load_week_plan,

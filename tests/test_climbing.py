@@ -3,17 +3,17 @@ from datetime import datetime, timezone
 import numpy as np
 import pytest
 
-from trail_planner.climb_blocks import BLOCK_S, CLIMB_FLOOR_GRADE_FRAC, HR_LAG_S, MIN_CLIMB_S, ClimbBlock, climbs_in
-from trail_planner.climb_model import (
+from trail_trainer.climb_blocks import BLOCK_S, CLIMB_FLOOR_GRADE_FRAC, HR_LAG_S, MIN_CLIMB_S, ClimbBlock, climbs_in
+from trail_trainer.climb_model import (
     BlockColumns,
     ClimbConditions,
     at_conditions_ft_per_hr,
     fit_climb_model,
     ft_per_hr_per_w_per_kg,
 )
-from trail_planner.climb_signals import ClimbSignals, climb_signals
-from trail_planner.recording import Recording
-from trail_planner.trail_stats import FT_PER_M
+from trail_trainer.climb_signals import ClimbSignals, climb_signals
+from trail_trainer.recording import Recording
+from trail_trainer.trail_stats import FT_PER_M
 
 START = datetime(2026, 10, 1, 15, 0, tzinfo=timezone.utc)
 M_PER_DEG_LAT = 111_195.0

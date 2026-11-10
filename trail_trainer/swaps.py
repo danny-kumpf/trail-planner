@@ -11,8 +11,8 @@ exclude, or that repeats another outing when repeats aren't allowed, is never re
 from dataclasses import dataclass
 from enum import Enum
 
-from trail_planner.planner import Plan, PlanRequest, has_enough_runnable, is_acceptable
-from trail_planner.trails import Trail
+from trail_trainer.planner import Plan, PlanRequest, has_enough_runnable, is_acceptable
+from trail_trainer.trails import Trail
 
 NUM_RECOMMENDED_SWAPS = 5
 

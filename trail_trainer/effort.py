@@ -6,8 +6,8 @@ from itertools import groupby
 
 import numpy as np
 
-from trail_planner.recording import Recording
-from trail_planner.trail_stats import M_PER_MI
+from trail_trainer.recording import Recording
+from trail_trainer.trail_stats import M_PER_MI
 
 # Running is ~165 steps/min and hiking ~110. 155 discriminated well on Lions_Lair while
 # removing false positives from other hikes.
