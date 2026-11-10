@@ -63,7 +63,7 @@ Use it to lower `runnable_mi` on a trail whose gentle grades are too rocky to ru
 
 The Training Log and Fitness tabs need your recorded activities. There are three ways to bring them in:
 
-- **[Activity files](#a-activity-files)**, one or more at a time, from any watch, app or website that lets you download FIT or GPX files. Free, and doesn't need Strava.
+- **[Activity files](#a-activity-files)**, added with a button on the Training Log, from any watch, app or website that lets you download FIT or GPX files. Free, and doesn't need Strava.
 - **[Strava's account export](#b-strava-account-export)**, your whole Strava history at once. Free.
 - **[Sync with Strava](#c-sync-with-strava)**, a button that fetches new activities. Needs a paid Strava subscription.
 
@@ -73,19 +73,23 @@ Most Strava users import the account export once for their history, then keep up
 
 Download your activity as a FIT or GPX file. For example:
 
-- **Garmin Connect:** on the activity's page, the gear icon → **Export Original** (a zip holding a FIT file; unzip it) or **Export to GPX**.
+- **Garmin Connect:** on the activity's page, the gear icon → **Export Original** (a zip holding a FIT file) or **Export to GPX**.
 - **Strava:** on the activity's page, **⋯ → Export Original** or **Export GPX**.
 - **Other watches and apps** (Coros, Suunto, Wahoo, phone apps) have a similar export on each activity.
 
-Then import the file, several files, or a folder of them:
+Then, on the Training Log tab, click **Add activity files** and choose one or more files.
+
+Each activity is named after its GPX track's name, or after the file name if it has none (FIT files don't), so rename the file first to name the activity. Its type (hike, run, bike, ski or workout) comes from the sport the file records. If a file doesn't record one, you're asked to choose. You can also change an activity's type later by clicking it.
+
+FIT and GPX files are supported, optionally gzipped (`.fit.gz`, `.gpx.gz`), and so are zips of them. TCX files aren't yet.
+
+To import many files at once, e.g. a folder of downloads, there's also a command:
 
 ```
-uv run python -m trail_trainer.import_activity_files ~/Downloads/Morning_Hike.fit
+uv run python -m trail_trainer.import_activity_files ~/Downloads/watch_exports
 ```
 
-Each activity is named after its GPX track's name, or after the file name if it has none (FIT files don't), so rename the file first to name the activity. Its type (hike, run, bike, ski or workout) comes from the sport the file records. If a file doesn't record one, the import says so; give it with `--type`, e.g. `--type hike` (the choices are `hike`, `trail_run`, `bike`, `race`, `ski`, `workout`). You can also change an activity's type later on the Training Log.
-
-FIT and GPX files are supported, optionally gzipped (`.fit.gz`, `.gpx.gz`). TCX files aren't yet.
+It takes files, zips and folders. For files that don't record their sport, give one with `--type`, e.g. `--type hike` (the choices are `hike`, `trail_run`, `bike`, `race`, `ski`, `workout`).
 
 Importing a file again, or another file of the same activity, updates its entry and keeps your edits. A file of an activity that's already in the log from Strava is skipped. If an activity you imported as a file later comes in from Strava, by export or sync, Strava's copy replaces it and keeps your edits.
 

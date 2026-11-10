@@ -3,13 +3,15 @@
 Usage: uv run python -m trail_trainer.app, then open http://localhost:5000
 """
 
+import json
 import random
 import secrets
+import tempfile
 import threading
 from collections import OrderedDict
 from dataclasses import asdict
 from datetime import date, datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urlsplit
 
 import plotly
@@ -39,6 +41,7 @@ from trail_trainer.fitness_plots import (
     predicted_vs_actual,
     track_overview,
 )
+from trail_trainer.import_activity_files import import_activity_files
 from trail_trainer.planner import (
     NoCombinations,
     NoPlanInTolerance,
@@ -74,6 +77,7 @@ from trail_trainer.training_log import (
     DEFAULT_ACTIVITY_FILES_DIR,
     DEFAULT_LOG_PATH,
     Activity,
+    ActivityType,
     ModelChoice,
     UnknownActivity,
     load_activities,
@@ -407,6 +411,58 @@ def save_week(week_start: str):
 @app.get("/api/activities")
 def activities():
     return jsonify([activity_json(a) for a in load_activities(app.config["TRAINING_LOG_PATH"])])
+
+
+def uploaded_file_name(file_name: str | None) -> str:
+    """The upload's own name, without any folders the browser sent with it (a Windows browser may
+    send backslashes)."""
+    name = PureWindowsPath(file_name or "").name
+    return name if name not in ("", ".", "..") else "upload"
+
+
+def types_by_file_name_from_json(text: str) -> dict[str, ActivityType]:
+    """`{"file name": "type", ...}` as types, or ValueError."""
+    try:
+        types = json.loads(text)
+    except json.JSONDecodeError:
+        raise ValueError("types must be a JSON object") from None
+    if not isinstance(types, dict):
+        raise ValueError("types must be a JSON object")
+    try:
+        return {str(name): ActivityType(value) for name, value in types.items()}
+    except ValueError:
+        raise ValueError(f"each type must be one of {', '.join(ActivityType)}") from None
+
+
+@app.post("/api/activities/files")
+def add_activity_files():
+    """Import the uploaded activity files (form field `files`: FIT or GPX, optionally gzipped, or
+    zips of them). An optional `types` field, `{"file name": "type"}`, gives the type of files that
+    don't say their sport. Responds with what was imported."""
+    uploads = request.files.getlist("files")
+    if not uploads:
+        return jsonify(error="no files were uploaded"), 400
+    try:
+        types_by_file_name = types_by_file_name_from_json(request.form.get("types", "{}"))
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    with tempfile.TemporaryDirectory() as upload_dir:
+        paths = []
+        for i, upload in enumerate(uploads):
+            # A folder per upload keeps each one's name, even if two share it.
+            folder = Path(upload_dir) / str(i)
+            folder.mkdir()
+            path = folder / uploaded_file_name(upload.filename)
+            upload.save(path)
+            paths.append(path)
+        with log_lock:
+            report = import_activity_files(
+                paths,
+                app.config["TRAINING_LOG_PATH"],
+                app.config["ACTIVITY_FILES_DIR"],
+                types_by_file_name=types_by_file_name,
+            )
+    return jsonify(asdict(report))
 
 
 @app.patch("/api/activities/<activity_id>")

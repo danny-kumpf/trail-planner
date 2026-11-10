@@ -8,6 +8,7 @@ from pathlib import Path
 import gpxpy.gpx
 import pytest
 
+from trail_trainer.app import app
 from trail_trainer.climb_blocks import ClimbBlock
 from trail_trainer.fitness import climb_blocks_by_activity
 from trail_trainer.import_activity_files import NotLogged, activity_type_of_file, import_activity_files
@@ -100,11 +101,30 @@ def test_a_file_that_doesnt_name_its_sport_needs_a_type(paths):
     downloads, log_path, files_dir = paths
     gpx_path = downloaded_gpx(downloads, sport=None)
     report = import_activity_files([gpx_path], log_path, files_dir)
-    assert "--type" in report.failed["weighted_carry.gpx"]
+    assert report.sport_unknown == ["weighted_carry.gpx"] and report.failed == {}
     assert load_activities(log_path) == []
 
-    import_activity_files([gpx_path], log_path, files_dir, ActivityType.HIKE)
+    import_activity_files([gpx_path], log_path, files_dir, types_by_file_name={"weighted_carry.gpx": ActivityType.SKI})
+    assert [a.type for a in load_activities(log_path)] == [ActivityType.SKI]
+
+
+def test_a_given_type_doesnt_override_the_sport_a_file_names(paths):
+    downloads, log_path, files_dir = paths
+    import_activity_files([downloaded_fit(downloads)], log_path, files_dir, default_type=ActivityType.BIKE)
     assert [a.type for a in load_activities(log_path)] == [ActivityType.HIKE]
+
+
+def test_a_zip_imports_the_activity_files_in_it(paths):
+    downloads, log_path, files_dir = paths
+    zip_path = downloads / "garmin_export.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.write(HIKE_FIT, "nested/Weighted_carry.fit.gz")
+        archive.writestr("readme.txt", "not an activity")
+    (downloads / "broken.zip").write_bytes(b"not a zip")
+    report = import_activity_files([zip_path, downloads / "broken.zip"], log_path, files_dir)
+    assert report.added == [f"Weighted carry ({HIKE_FILE_ID})"]
+    assert list(report.failed) == ["broken.zip"]
+    assert json.loads(log_path.read_text())[HIKE_FILE_ID]["file"]["file_name"] == "Weighted_carry.fit.gz"
 
 
 def test_a_folder_imports_its_activity_files(paths):
@@ -218,3 +238,59 @@ def test_activity_type_of_file(sport, sub_sport, activity_type):
 def test_resort_skiing_and_snowboarding_are_not_logged(sport):
     with pytest.raises(NotLogged):
         activity_type_of_file(FileDescription(name=None, sport=sport, sub_sport="generic"))
+
+
+# ---- Uploading from the Training Log page ----
+
+
+@pytest.fixture
+def site(paths, monkeypatch):
+    _, log_path, files_dir = paths
+    monkeypatch.setitem(app.config, "TRAINING_LOG_PATH", log_path)
+    monkeypatch.setitem(app.config, "ACTIVITY_FILES_DIR", files_dir)
+    return app.test_client()
+
+
+def test_uploaded_files_are_imported(site, paths):
+    downloads, log_path, _ = paths
+    fit_path = downloaded_fit(downloads)
+    response = site.post(
+        "/api/activities/files",
+        data={"files": [(fit_path.open("rb"), "Downloads/Weighted_carry.fit.gz")]},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    assert response.get_json()["added"] == [f"Weighted carry ({HIKE_FILE_ID})"]
+    assert json.loads(log_path.read_text())[HIKE_FILE_ID]["file"]["file_name"] == "Weighted_carry.fit.gz"
+
+
+def test_uploaded_files_without_a_sport_take_the_type_chosen_for_them(site, paths):
+    downloads, log_path, _ = paths
+    gpx_path = downloaded_gpx(downloads, sport=None)
+
+    def upload(**form):
+        return site.post(
+            "/api/activities/files",
+            data={"files": [(gpx_path.open("rb"), gpx_path.name)], **form},
+            content_type="multipart/form-data",
+        )
+
+    assert upload().get_json()["sport_unknown"] == ["weighted_carry.gpx"]
+    assert upload(types=json.dumps({"weighted_carry.gpx": "hike"})).get_json()["added"] != []
+    assert [a.type for a in load_activities(log_path)] == [ActivityType.HIKE]
+
+
+@pytest.mark.parametrize("types", ["[]", "not json", '{"a.gpx": "swim"}'])
+def test_upload_refuses_types_it_cant_use(site, paths, types):
+    downloads, _, _ = paths
+    fit_path = downloaded_fit(downloads)
+    response = site.post(
+        "/api/activities/files",
+        data={"files": [(fit_path.open("rb"), fit_path.name)], "types": types},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 400
+
+
+def test_upload_needs_files(site):
+    assert site.post("/api/activities/files", data={}, content_type="multipart/form-data").status_code == 400

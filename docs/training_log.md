@@ -16,6 +16,10 @@ The type filter limits both the circles and the totals. The sidebar jumps to a y
 
 **Grades from Strava.** When an activity first enters the log, a line like `Grade: B` in its Strava private note becomes its grade. This happens only once, so a grade you clear later doesn't come back.
 
+## Adding activity files
+
+**Add activity files**, next to **Sync with Strava**, imports FIT or GPX files (or zips of them) downloaded from any watch, app or website. Each activity's type comes from the sport its file records; a file that doesn't record one asks you to choose. See the [README](../README.md#a-activity-files) for where to download them.
+
 ## Activities from more than one place
 
 An activity can come in from an activity file, Strava's account export, or a sync. Each is recognized by when it started, so two copies starting within a minute of each other are the same activity:

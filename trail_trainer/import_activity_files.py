@@ -3,11 +3,13 @@ a watch or phone app's download, or Strava's export of a single activity.
 
 Usage: uv run python -m trail_trainer.import_activity_files [--type TYPE] PATH [PATH ...]
 
-Each PATH is a file, or a folder whose activity files are all imported. Each file's recording is
-copied into activity_files/, and its entry in training_log.json gets a `file` block:
+Each PATH is an activity file, a zip of them (as Garmin Connect's "Export Original" gives), or a
+folder of either. The Training Log page's "Add activity files" button imports through here too.
+Each file's recording is copied into activity_files/, and its entry in training_log.json gets a
+`file` block:
 - `name`: the GPX track's name, or else the file's name.
-- `type`: --type if given, else what the file says its sport is. A file that doesn't say needs
-  --type.
+- `type`: what the file says its sport is. A file that doesn't say needs a type given for it:
+  --type, or the type chosen for it on the page.
 - `start_utc`: when the recording starts.
 - `file_name`: the name of the file it was imported from.
 
@@ -18,6 +20,8 @@ Strava replaces the file's entry, taking its edits.
 """
 
 import argparse
+import tempfile
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,6 +78,10 @@ class NotLogged(Exception):
     """The activity is of a sport the training log doesn't keep."""
 
 
+class SportUnknown(Exception):
+    """The file doesn't say what sport the activity was, and no type was given for it."""
+
+
 def normalized_sport(sport: str) -> str:
     return sport.lower().replace(" ", "").replace("_", "").replace("-", "")
 
@@ -106,19 +114,47 @@ def stored_file_name(activity_id: str, file_name: str) -> str:
     return f"{activity_id}.{file_name.split('.', 1)[1].lower()}"
 
 
-def activity_files_in(paths: list[Path]) -> list[Path]:
-    """The files named, and the activity files in the folders named."""
+def is_activity_file_name(file_name: str) -> bool:
+    try:
+        file_format(file_name)
+    except ValueError:
+        return False
+    return True
 
-    def is_activity_file(path: Path) -> bool:
-        try:
-            file_format(path.name)
-        except ValueError:
-            return False
-        return path.is_file()
 
+def is_zip(path: Path) -> bool:
+    return path.suffix.lower() == ".zip"
+
+
+def unpacked_zip(zip_path: Path, unpack_dir: Path) -> list[Path]:
+    """The activity files in the zip, written into a folder of their own under `unpack_dir`."""
+    folder = unpack_dir / str(len(list(unpack_dir.iterdir())))
+    folder.mkdir()
+    files: list[Path] = []
+    with zipfile.ZipFile(zip_path) as archive:
+        for member in archive.namelist():
+            # Only the member's own name, so nothing is written outside the folder.
+            name = Path(member).name
+            if not is_activity_file_name(name):
+                continue
+            path = folder / name
+            path.write_bytes(archive.read(member))
+            files.append(path)
+    return files
+
+
+def activity_files_in(paths: list[Path], unpack_dir: Path) -> list[Path]:
+    """The files named, the activity files in the zips and folders named, and those in the zips in
+    the folders named. Zips are unpacked into `unpack_dir`."""
     files: list[Path] = []
     for path in paths:
-        files.extend(sorted(filter(is_activity_file, path.iterdir())) if path.is_dir() else [path])
+        if path.is_dir():
+            inside = sorted(p for p in path.iterdir() if p.is_file() and (is_activity_file_name(p.name) or is_zip(p)))
+            files.extend(activity_files_in(inside, unpack_dir))
+        elif is_zip(path):
+            files.extend(unpacked_zip(path, unpack_dir))
+        else:
+            files.append(path)
     return files
 
 
@@ -130,6 +166,8 @@ class FileImportReport:
     already_from_strava: dict[str, str] = field(default_factory=dict)
     # Files of a sport the log doesn't keep, e.g. resort snowboarding.
     left_out: list[str] = field(default_factory=list)
+    # Files that don't say what sport they are; import them again with a type.
+    sport_unknown: list[str] = field(default_factory=list)
     failed: dict[str, str] = field(default_factory=dict)
 
 
@@ -137,16 +175,16 @@ def import_activity_file(
     path: Path,
     entries: dict[str, dict],
     activity_files_dir: Path,
-    activity_type: ActivityType | None,
+    type_if_sport_unnamed: ActivityType | None,
     report: FileImportReport,
 ) -> None:
-    """Add the file's activity to `entries`, or update its entry; `activity_type` overrides what
-    the file says its sport is."""
+    """Add the file's activity to `entries`, or update its entry. Its type is the sport the file
+    names, or `type_if_sport_unnamed` if it doesn't name one."""
     recording = read_recording(path)
     description = read_description(path)
-    activity_type = activity_type or activity_type_of_file(description)
+    activity_type = activity_type_of_file(description) or type_if_sport_unnamed
     if activity_type is None:
-        raise ValueError("the file doesn't say what sport it is; import it with --type")
+        raise SportUnknown(path.name)
     start = recording.start.astimezone(timezone.utc)
 
     same_activity = same_activity_ids(entries, start)
@@ -179,18 +217,35 @@ def import_activity_file(
 
 
 def import_activity_files(
-    paths: list[Path], log_path: Path, activity_files_dir: Path, activity_type: ActivityType | None = None
+    paths: list[Path],
+    log_path: Path,
+    activity_files_dir: Path,
+    default_type: ActivityType | None = None,
+    types_by_file_name: dict[str, ActivityType] | None = None,
 ) -> FileImportReport:
+    """Import the activity files in `paths`. A file that doesn't name its sport gets its type from
+    `types_by_file_name` (by the file's own name, even inside a zip), else `default_type`."""
+    types_by_file_name = types_by_file_name or {}
     report = FileImportReport()
     entries = read_log(log_path)
     activity_files_dir.mkdir(parents=True, exist_ok=True)
-    for path in activity_files_in(paths):
-        try:
-            import_activity_file(path, entries, activity_files_dir, activity_type, report)
-        except NotLogged:
-            report.left_out.append(path.name)
-        except (ValueError, OSError) as e:
-            report.failed[path.name] = str(e)
+    with tempfile.TemporaryDirectory() as unpack_dir:
+        files: list[Path] = []
+        for path in paths:
+            try:
+                files.extend(activity_files_in([path], Path(unpack_dir)))
+            except (zipfile.BadZipFile, OSError) as e:
+                report.failed[path.name] = str(e)
+        for path in files:
+            try:
+                type_if_sport_unnamed = types_by_file_name.get(path.name, default_type)
+                import_activity_file(path, entries, activity_files_dir, type_if_sport_unnamed, report)
+            except NotLogged:
+                report.left_out.append(path.name)
+            except SportUnknown:
+                report.sport_unknown.append(path.name)
+            except (ValueError, OSError) as e:
+                report.failed[path.name] = str(e)
     write_entries(log_path, entries)
     return report
 
@@ -198,17 +253,19 @@ def import_activity_files(
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="uv run python -m trail_trainer.import_activity_files",
-        description="Import FIT or GPX activity files (optionally gzipped) into the training log.",
+        description="Import FIT or GPX activity files (optionally gzipped or zipped) into the training log.",
     )
-    parser.add_argument("paths", nargs="+", type=Path, metavar="PATH", help="an activity file, or a folder of them")
+    parser.add_argument(
+        "paths", nargs="+", type=Path, metavar="PATH", help="an activity file, a zip of them, or a folder of either"
+    )
     parser.add_argument(
         "--type",
         choices=[t.value for t in ActivityType],
-        help="the activities' type, instead of the sport each file names",
+        help="the type of activities whose files don't say what sport they are",
     )
     args = parser.parse_args()
-    activity_type = ActivityType(args.type) if args.type else None
-    report = import_activity_files(args.paths, DEFAULT_LOG_PATH, DEFAULT_ACTIVITY_FILES_DIR, activity_type)
+    default_type = ActivityType(args.type) if args.type else None
+    report = import_activity_files(args.paths, DEFAULT_LOG_PATH, DEFAULT_ACTIVITY_FILES_DIR, default_type)
 
     print(f"Added {len(report.added)} activities and updated {len(report.updated)}.")
     for label in report.added:
@@ -219,6 +276,8 @@ def main() -> None:
         print(f"Skipped {file_name}: already in the log from Strava as {strava_label}")
     if report.left_out:
         print(f"Left out as resort skiing or snowboarding: {', '.join(report.left_out)}")
+    if report.sport_unknown:
+        print(f"These don't say what sport they are; import them again with --type: {', '.join(report.sport_unknown)}")
     for file_name, error in report.failed.items():
         print(f"Failed {file_name}: {error}")
 

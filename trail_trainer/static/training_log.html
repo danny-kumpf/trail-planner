@@ -40,8 +40,16 @@
     border-radius: 8px;
     padding: 8px 16px;
   }
-  .sync-button:disabled { opacity: 0.6; cursor: progress; }
-  .sync-status { color: var(--muted); font-size: 0.9rem; }
+  .add-files-button {
+    font-weight: 600;
+    background: none;
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+  }
+  .sync-button:disabled, .add-files-button:disabled { opacity: 0.6; cursor: progress; }
+  .header-status { color: var(--muted); font-size: 0.9rem; }
 
   .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 16px; }
   select, input {
@@ -201,6 +209,8 @@
   .editor-actions button { border-radius: 8px; padding: 8px 16px; font-weight: 600; }
   .editor-actions .cancel { background: none; border: 1px solid var(--border); }
   .editor-actions .save { background: var(--accent); color: var(--accent-text); border: none; }
+  .sport-fields { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+  .sport-fields label { font-size: 0.9rem; overflow-wrap: anywhere; }
   /* On the left, apart from Cancel and Save. */
   .editor-actions .explore {
     margin-right: auto;
@@ -232,7 +242,9 @@
   <div class="log-header">
     <h1>Training Log</h1>
     <button type="button" class="sync-button" id="sync">⟳ Sync with Strava</button>
-    <span class="sync-status" id="sync-status"></span>
+    <button type="button" class="add-files-button" id="add-files">＋ Add activity files</button>
+    <input type="file" id="add-files-input" multiple accept=".fit,.gpx,.gz,.zip" hidden>
+    <span class="header-status" id="header-status"></span>
   </div>
 
   <div class="controls">
@@ -290,6 +302,18 @@
         <a class="explore" id="editor-explore" hidden>Explore</a>
         <button type="button" class="cancel" id="editor-cancel">Cancel</button>
         <button type="submit" class="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sport-picker">
+    <form id="sport-picker-form" method="dialog">
+      <h2 id="sport-picker-title"></h2>
+      <p class="editor-date" id="sport-picker-hint"></p>
+      <div class="sport-fields" id="sport-fields"></div>
+      <div class="editor-actions">
+        <button type="button" class="cancel" id="sport-picker-cancel">Skip</button>
+        <button type="submit" class="save">Add</button>
       </div>
     </form>
   </dialog>
@@ -847,25 +871,25 @@ function syncProblems(report) {
 
 async function syncWithStrava() {
   $("sync").disabled = true;
-  $("sync-status").textContent = "Syncing…";
+  $("header-status").textContent = "Syncing…";
   try {
     const response = await fetch("/api/strava/sync", { method: "POST" });
     const result = await response.json();
     if (response.status === 401 && result.authorize_url) {
-      $("sync-status").textContent = "Opening Strava to approve access…";
+      $("header-status").textContent = "Opening Strava to approve access…";
       window.location.assign(result.authorize_url);
       return;
     }
     if (!response.ok) {
-      $("sync-status").textContent = result.error;
+      $("header-status").textContent = result.error;
       return;
     }
-    $("sync-status").textContent = syncSummary(result);
+    $("header-status").textContent = syncSummary(result);
     await loadActivities();
     const problems = syncProblems(result);
     if (problems.length) showMessage(problems.join("\n"), true);
   } catch (e) {
-    $("sync-status").textContent = "Couldn't reach the server.";
+    $("header-status").textContent = "Couldn't reach the server.";
   } finally {
     $("sync").disabled = false;
   }
@@ -873,13 +897,139 @@ async function syncWithStrava() {
 
 $("sync").addEventListener("click", syncWithStrava);
 
+// ---- Adding activity files ----
+
+// The files' import report, from the server.
+async function uploadActivityFiles(files, typesByFileName = {}) {
+  const form = new FormData();
+  for (const file of files) form.append("files", file, file.name);
+  form.append("types", JSON.stringify(typesByFileName));
+  const response = await fetch("/api/activities/files", { method: "POST", body: form });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error);
+  return result;
+}
+
+// Both reports as one, where `second` re-imported some of `first`'s files with types chosen for
+// them. An activity added by the first and updated by the second only counts as added.
+function combinedImportReports(first, second) {
+  const added = [...first.added, ...second.added];
+  return {
+    added,
+    updated: [...new Set([...first.updated, ...second.updated])].filter((label) => !added.includes(label)),
+    already_from_strava: { ...first.already_from_strava, ...second.already_from_strava },
+    left_out: [...new Set([...first.left_out, ...second.left_out])],
+    sport_unknown: second.sport_unknown,
+    failed: { ...first.failed, ...second.failed },
+  };
+}
+
+// Asks for the type of each named file; resolves to {file name: type}, or null if they're not to
+// be added.
+function chooseTypes(fileNames) {
+  const choices = fileNames.map((name, i) => {
+    const select = el("select");
+    select.id = `sport-choice-${i}`;
+    select.required = true;
+    select.append(new Option("Choose…", ""), ...ACTIVITY_TYPES.map((t) => new Option(t.label, t.id)));
+    return { name, select };
+  });
+  const one = fileNames.length === 1;
+  $("sport-picker-title").textContent = one ? "What sport was this?" : "What sport were these?";
+  $("sport-picker-hint").textContent = one
+    ? "This file doesn't say. Choose a type to add it."
+    : "These files don't say. Choose a type for each one to add it.";
+  $("sport-fields").replaceChildren(...choices.flatMap(({ name, select }) => {
+    const label = el("label", name);
+    label.htmlFor = select.id;
+    return [label, select];
+  }));
+  return new Promise((resolve) => {
+    const picker = $("sport-picker");
+    const finish = (choice) => {
+      $("sport-picker-form").onsubmit = null;
+      $("sport-picker-cancel").onclick = null;
+      picker.onclose = null;
+      picker.close();
+      resolve(choice);
+    };
+    $("sport-picker-form").onsubmit = (event) => {
+      event.preventDefault();
+      finish(Object.fromEntries(choices.map(({ name, select }) => [name, select.value])));
+    };
+    $("sport-picker-cancel").onclick = () => finish(null);
+    // Escape closes the dialog without either button.
+    picker.onclose = () => finish(null);
+    picker.showModal();
+  });
+}
+
+function importSummary(report) {
+  const parts = [];
+  if (report.added.length) parts.push(`added ${counted(report.added.length, "activity", "activities")}`);
+  if (report.updated.length) parts.push(`updated ${report.updated.length}`);
+  const fromStravaCount = Object.keys(report.already_from_strava).length;
+  if (fromStravaCount) parts.push(`skipped ${fromStravaCount} already from Strava`);
+  if (report.left_out.length) parts.push(`left out ${report.left_out.length} resort ski/snowboard`);
+  const notAddedCount = report.sport_unknown.length + Object.keys(report.failed).length;
+  if (notAddedCount) parts.push(`${notAddedCount} not added`);
+  if (!parts.length) return "No activity files found.";
+  const text = parts.join(", ") + ".";
+  return text[0].toUpperCase() + text.slice(1);
+}
+
+// What needs your attention after adding files, one line each; empty if nothing does.
+function importProblems(report) {
+  const lines = [];
+  for (const [fileName, error] of Object.entries(report.failed)) lines.push(`Couldn't add ${fileName}: ${error}`);
+  if (report.sport_unknown.length) {
+    lines.push(`Not added, as no sport was chosen: ${report.sport_unknown.join(", ")}.`);
+  }
+  for (const [fileName, label] of Object.entries(report.already_from_strava)) {
+    lines.push(`Skipped ${fileName}: it's already here from Strava, as ${label}.`);
+  }
+  return lines;
+}
+
+async function addActivityFiles(files) {
+  $("add-files").disabled = true;
+  $("header-status").textContent = `Adding ${counted(files.length, "file", "files")}…`;
+  try {
+    let report = await uploadActivityFiles(files);
+    if (report.sport_unknown.length) {
+      const types = await chooseTypes(report.sport_unknown);
+      if (types) {
+        // A file named in the report may be inside an uploaded zip, so send the zips again too.
+        const resent = files.filter((f) => f.name in types || f.name.toLowerCase().endsWith(".zip"));
+        report = combinedImportReports(report, await uploadActivityFiles(resent, types));
+      }
+    }
+    $("header-status").textContent = importSummary(report);
+    await loadActivities();
+    const problems = importProblems(report);
+    if (problems.length) showMessage(problems.join("\n"), true);
+  } catch (e) {
+    $("header-status").textContent = e instanceof TypeError ? "Couldn't reach the server." : e.message;
+  } finally {
+    $("add-files").disabled = false;
+  }
+}
+
+$("add-files").addEventListener("click", () => $("add-files-input").click());
+$("add-files-input").addEventListener("change", () => {
+  const files = [...$("add-files-input").files];
+  // Cleared so choosing the same files again still counts as a change.
+  $("add-files-input").value = "";
+  if (files.length) addActivityFiles(files);
+});
+
 // After approving access on Strava, the browser comes back here with ?sync=1 (or ?strava_error=…).
 function followStravaRedirect() {
   const params = new URLSearchParams(window.location.search);
   if (!params.has("sync") && !params.has("strava_error")) return;
   history.replaceState(null, "", window.location.pathname);
   if (params.has("strava_error")) {
-    $("sync-status").textContent = params.get("strava_error");
+    $("header-status").textContent = params.get("strava_error");
   } else {
     syncWithStrava();
   }
@@ -916,8 +1066,8 @@ async function loadActivities() {
   loadExplorableIds();
   $("message").hidden = true;
   if (!activities.length) {
-    showMessage("No activities yet. Sync with Strava, or first import your Strava account export with: " +
-                "uv run python -m trail_trainer.import_strava_export <export zip>");
+    showMessage("No activities yet. Add activity files from your watch or app, sync with Strava, or import your " +
+                "Strava account export with: uv run python -m trail_trainer.import_strava_export <export zip>");
   }
   render();
 }

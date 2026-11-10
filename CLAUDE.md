@@ -42,7 +42,7 @@ uv run python -m trail_trainer.readme_screenshots
 | `trail_trainer/activity_stats.py` | Source block + recording → the numbers the training log shows |
 | `trail_trainer/training_log.py` | Loads the training log, applying overrides; validates edits |
 | `trail_trainer/import_strava_export.py` | Script that imports a Strava account export into the training log |
-| `trail_trainer/import_activity_files.py` | Script that imports individual FIT/GPX files from any source into the training log |
+| `trail_trainer/import_activity_files.py` | Imports individual FIT/GPX files (or zips of them) from any source into the training log; a script, and behind the Training Log's **Add activity files** button (`POST /api/activities/files`) |
 | `trail_trainer/rebuild_training_log.py` | Script that recomputes the training log from the stored recordings |
 | `trail_trainer/strava_api.py` | Strava's API: approving access, refreshing tokens, reading activities |
 | `trail_trainer/strava_sync.py` | Brings the training log up to date with Strava |
