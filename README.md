@@ -1,6 +1,6 @@
 # Trail Trainer
 
-[README text and code implementation by Claude Opus 5.5]
+*README text and code implementation by Claude Opus 5.5*
 
 A local web app for training for trail running and hiking. It has three tabs: one plans the week's outings, one logs what you did, and one tracks how fast you climb.
 
