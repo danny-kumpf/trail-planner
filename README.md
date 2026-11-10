@@ -4,11 +4,11 @@
 
 A local web app for training for trail running and hiking. It has three tabs: one plans the week's outings, one logs what you did, and one tracks how fast you climb.
 
-**Trail Planning.** You give it the vert and running miles you want this week. It picks a set of trails that hits the vert within a small tolerance and has enough runnable terrain for the running target. When every workout is a trail outing of at least an hour, you can't raise the weekly load by adding 10 minutes to a run. Trails differ in vert, though, so combinations of them give fine-grained control over the weekly total. It plans one week at a time; long-term progression is up to you.
+**Trail Planning.** You give it the vert and running miles you want this week. It picks a set of trails that hits the vert within a small tolerance and has enough runnable terrain for the running target.
 
-**Training Log.** Your Strava activities on a calendar, by week, month or year, with each period's vert, time, distance and running miles. Running miles come from each recording's cadence and pace, so the running stretches of a hike count. You can grade activities and correct their numbers.
+**Training Log.** Your Strava activities on a calendar, by week, month or year, with each period's vert, time, distance and running miles.
 
-**Fitness.** A model of climbing rate against heart rate and elevation, fit to your recent efforts. Each effort gets a climbing rate at standard conditions, so efforts on different days and terrain can be compared over time. Each effort also has its own page, which shows its climbs and how they compare with the model.
+**Fitness.** A model of climbing rate against heart rate and elevation, fit to your recent efforts.
 
 ## Screenshots
 
