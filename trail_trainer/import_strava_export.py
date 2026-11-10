@@ -8,8 +8,8 @@ import can be run again, e.g. with a newer export. Resort skiing and snowboardin
 
 Two things happen only when an activity first enters the log:
 - A "Grade: X" line in its Strava private note becomes its grade.
-- Edits on a test entry imported from gpx/ with the same start time move to it, and the test
-  entry is removed.
+- If it was already in the log from an imported activity file, that entry's edits move to it and
+  that entry is removed.
 """
 
 import csv
@@ -17,25 +17,23 @@ import io
 import sys
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
-from trail_trainer.activity_stats import is_logged, recorded_block
+from trail_trainer.activity_stats import is_logged, recorded_from_strava
 from trail_trainer.json_store import write_entries
 from trail_trainer.recording import read_recording
 from trail_trainer.training_log import (
     DEFAULT_ACTIVITY_FILES_DIR,
     DEFAULT_LOG_PATH,
-    new_entry,
+    new_strava_entry,
     read_log,
     remove_entry,
+    replace_file_entries,
 )
 
 # How activities.csv writes "Activity Date", which is in UTC.
 EXPORT_DATE_FORMAT = "%b %d, %Y, %I:%M:%S %p"
-TEST_ENTRY_PREFIX = "gpx:"
-# Test entries' start times were taken from the same recordings, so they match to the second.
-MAX_TEST_ENTRY_START_DIFFERENCE = timedelta(seconds=60)
 
 
 @dataclass
@@ -47,8 +45,8 @@ class ExportImportReport:
     without_recording: list[str] = field(default_factory=list)
     failed: dict[str, str] = field(default_factory=dict)
     grades_copied: dict[str, str] = field(default_factory=dict)
-    # Test entry id -> the Strava activity id its edits moved to.
-    test_entries_replaced: dict[str, str] = field(default_factory=dict)
+    # Entry id of an imported activity file -> the Strava activity id that replaced it.
+    file_entries_replaced: dict[str, str] = field(default_factory=dict)
 
 
 def read_activity_rows(export: zipfile.ZipFile) -> list[dict[str, str]]:
@@ -94,26 +92,6 @@ def recording_file_name(activity_id: str, export_file_name: str) -> str:
     return f"{activity_id}.{extensions}"
 
 
-def test_entry_start_utc(entry: dict) -> datetime:
-    """Test entries' local starts were made in this computer's time zone."""
-    return datetime.fromisoformat(entry["recorded"]["start_local"]).astimezone(timezone.utc)
-
-
-def replace_test_entries(entries: dict[str, dict], new_ids: list[str], report: ExportImportReport) -> None:
-    """Move each test entry's edits to the newly imported activity it duplicates, and remove it."""
-    for test_id in [i for i in entries if i.startswith(TEST_ENTRY_PREFIX)]:
-        test_start = test_entry_start_utc(entries[test_id])
-        for activity_id in new_ids:
-            start = datetime.fromisoformat(entries[activity_id]["strava"]["start_utc"])
-            if abs(start - test_start) <= MAX_TEST_ENTRY_START_DIFFERENCE:
-                entries[activity_id]["manual"] = {
-                    **entries[activity_id]["manual"],
-                    **entries.pop(test_id).get("manual", {}),
-                }
-                report.test_entries_replaced[test_id] = activity_id
-                break
-
-
 def import_strava_export(zip_path: Path, log_path: Path, activity_files_dir: Path) -> ExportImportReport:
     report = ExportImportReport()
     entries = read_log(log_path)
@@ -134,9 +112,9 @@ def import_strava_export(zip_path: Path, log_path: Path, activity_files_dir: Pat
             try:
                 if file_name is not None:
                     (activity_files_dir / file_name).write_bytes(export.read(row["Filename"]))
-                    recorded = recorded_block(strava, read_recording(activity_files_dir / file_name))
+                    recorded = recorded_from_strava(strava, read_recording(activity_files_dir / file_name))
                 else:
-                    recorded = recorded_block(strava, None)
+                    recorded = recorded_from_strava(strava, None)
                     report.without_recording.append(label)
             except (ValueError, KeyError) as e:
                 report.failed[label] = str(e)
@@ -146,12 +124,12 @@ def import_strava_export(zip_path: Path, log_path: Path, activity_files_dir: Pat
             if activity_id in entries:
                 entries[activity_id].update(strava=strava, recording_file=file_name, recorded=recorded)
             else:
-                entries[activity_id] = new_entry(strava, file_name, recorded)
+                entries[activity_id] = new_strava_entry(strava, file_name, recorded)
                 new_ids.append(activity_id)
                 if "grade" in entries[activity_id]["manual"]:
                     report.grades_copied[label] = entries[activity_id]["manual"]["grade"]
 
-    replace_test_entries(entries, new_ids, report)
+    report.file_entries_replaced = replace_file_entries(entries, new_ids, activity_files_dir)
     write_entries(log_path, entries)
     return report
 
@@ -167,8 +145,8 @@ def main() -> None:
         print(f"Without a recording, so from Strava's summary: {', '.join(report.without_recording)}")
     for label, grade in report.grades_copied.items():
         print(f"Grade {grade} from the private note of {label}")
-    for test_id, activity_id in report.test_entries_replaced.items():
-        print(f"Replaced test entry {test_id} with {activity_id}")
+    for file_id, activity_id in report.file_entries_replaced.items():
+        print(f"Replaced {file_id}, imported from a file, with the same activity from Strava ({activity_id})")
     for label, error in report.failed.items():
         print(f"Failed {label}: {error}")
 

@@ -8,8 +8,11 @@ Every sync lists every activity's summary, which takes one request per 200 activ
   downloaded. The streams are kept in activity_files/ as <id>.streams.json.gz, so a rebuild never
   needs to download them again.
 
+A new activity that was already in the log from an imported activity file replaces that entry,
+taking its edits.
+
 Resort skiing and snowboarding are left out, and an activity changed to one of those on Strava
-is removed. Activities in the log that are no longer on Strava are reported, not removed, so their
+is removed. Activities from Strava that are no longer on it are reported, not removed, so their
 edits aren't lost to a mistake.
 
 Strava allows 100 reads per 15 minutes, and each new activity takes two. A sync that reaches the
@@ -25,7 +28,14 @@ from pathlib import Path
 from trail_trainer.activity_stats import is_logged, recorded_for_entry
 from trail_trainer.json_store import write_entries
 from trail_trainer.strava_api import NotAuthorized, NotFound, RateLimited, StravaClient, StravaError
-from trail_trainer.training_log import new_entry, read_log, remove_entry
+from trail_trainer.training_log import (
+    Source,
+    new_strava_entry,
+    read_log,
+    remove_entry,
+    replace_file_entries,
+    source_of,
+)
 
 
 @dataclass
@@ -39,6 +49,8 @@ class SyncReport:
     # Activities changed on Strava to a type the log doesn't keep, e.g. resort snowboarding.
     removed: list[str] = field(default_factory=list)
     not_on_strava: list[str] = field(default_factory=list)
+    # Entry id of an imported activity file -> the Strava activity id that replaced it.
+    file_entries_replaced: dict[str, str] = field(default_factory=dict)
 
 
 def label(name: str, activity_id: str) -> str:
@@ -102,7 +114,7 @@ def downloaded_entry(client: StravaClient, activity: dict, activity_files_dir: P
         None if activity["manual"] else save_streams(client, activity_id, strava["start_utc"], activity_files_dir)
     )
     recorded = recorded_for_entry({"strava": strava, "recording_file": recording_file}, activity_files_dir)
-    return new_entry(strava, recording_file, recorded)
+    return new_strava_entry(strava, recording_file, recorded)
 
 
 def sync(client: StravaClient, log_path: Path, activity_files_dir: Path) -> SyncReport:
@@ -113,8 +125,11 @@ def sync(client: StravaClient, log_path: Path, activity_files_dir: Path) -> Sync
 
     on_strava = {str(a["id"]) for a in summaries}
     report.not_on_strava = [
-        label(entry["recorded"]["name"], activity_id) for activity_id, entry in entries.items() if activity_id not in on_strava
+        label(entry["recorded"]["name"], activity_id)
+        for activity_id, entry in entries.items()
+        if source_of(entry) == Source.STRAVA and activity_id not in on_strava
     ]
+    added_ids: list[str] = []
 
     try:
         for activity in summaries:
@@ -148,10 +163,12 @@ def sync(client: StravaClient, log_path: Path, activity_files_dir: Path) -> Sync
             except (StravaError, ValueError, OSError) as e:
                 report.failed[label(activity["name"], activity_id)] = str(e)
                 continue
+            added_ids.append(activity_id)
             report.added.append(label(activity["name"], activity_id))
             if "grade" in entries[activity_id]["manual"]:
                 report.grades_copied[label(activity["name"], activity_id)] = entries[activity_id]["manual"]["grade"]
     finally:
+        report.file_entries_replaced = replace_file_entries(entries, added_ids, activity_files_dir)
         # Keep whatever was done, even if Strava stopped answering partway through.
         write_entries(log_path, entries)
     return report

@@ -823,6 +823,8 @@ function syncSummary(report) {
   if (report.added.length) parts.push(`added ${counted(report.added.length, "activity", "activities")}`);
   if (report.updated.length) parts.push(`updated ${report.updated.length}`);
   if (report.removed.length) parts.push(`removed ${report.removed.length} resort ski/snowboard`);
+  const replacedCount = Object.keys(report.file_entries_replaced).length;
+  if (replacedCount) parts.push(`replaced ${counted(replacedCount, "imported file", "imported files")} with Strava's copy`);
   if (Object.keys(report.failed).length) parts.push(`${Object.keys(report.failed).length} failed`);
   if (!parts.length) return "Up to date.";
   const text = parts.join(", ") + ".";

@@ -1,9 +1,14 @@
 """The training log: recorded activities, each with optional hand edits, in training_log.json.
 
-Each entry is keyed by Strava activity id and has these blocks:
-- `strava`: Strava's summary of the activity, rewritten by imports and syncs.
+Each entry comes from one of two sources, and has a block describing it from that source:
+- `strava`: Strava's summary of the activity, rewritten by imports and syncs. The entry is keyed by
+  Strava's activity id.
+- `file`: an activity file imported on its own (see import_activity_files): the activity's name,
+  type and start. The entry is keyed by `file-` and its start time.
+Every entry also has:
 - `recording_file`: the activity's recording in activity_files/, or null if it has none.
-- `recorded`: what we compute from those two (see activity_stats), rewritten with them.
+- `recorded`: what we compute from the source block and the recording (see activity_stats),
+  rewritten with them.
 - `manual`: hand edits, written when edits are saved from the page. It holds the grade and
   overrides of the overridable fields. A field's value is the manual one if set, else the
   recorded one. It also holds `model_choice`, set on the Fitness tab, which puts the activity in
@@ -12,7 +17,7 @@ Each entry is keyed by Strava activity id and has these blocks:
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
@@ -58,7 +63,40 @@ class ModelChoice(StrEnum):
     EXCLUDE = "exclude"
 
 
-NOTE_GRADE_PATTERN =re.compile(r"^\s*Grade:\s*([A-Za-z])\b", re.MULTILINE)
+class Source(StrEnum):
+    """Where an entry came from; also the name of the block that describes it from there."""
+
+    STRAVA = "strava"
+    FILE = "file"
+
+
+def source_of(entry: dict) -> Source:
+    sources = [source for source in Source if source.value in entry]
+    if len(sources) != 1:
+        raise ValueError(f"an entry needs exactly one of {', '.join(Source)}, found {len(sources)}")
+    return sources[0]
+
+
+def start_utc(entry: dict) -> datetime:
+    return datetime.fromisoformat(entry[source_of(entry).value]["start_utc"])
+
+
+# Two entries starting this close together are the same activity from different sources, e.g. a
+# file from the watch and the same activity later synced from Strava. Recordings of one activity
+# start within a few seconds of each other; two activities never start a minute apart.
+SAME_ACTIVITY_MAX_START_DIFFERENCE = timedelta(seconds=60)
+
+
+def same_activity_ids(entries: dict[str, dict], start: datetime) -> list[str]:
+    """The entries recording an activity that started at `start`."""
+    return [
+        activity_id
+        for activity_id, entry in entries.items()
+        if abs(start_utc(entry) - start) <= SAME_ACTIVITY_MAX_START_DIFFERENCE
+    ]
+
+
+NOTE_GRADE_PATTERN = re.compile(r"^\s*Grade:\s*([A-Za-z])\b", re.MULTILINE)
 
 # The recorded numbers a hand edit may replace, e.g. vert for a treadmill session.
 OVERRIDABLE_NUMBER_FIELDS = ("moving_time_s", "distance_mi", "vert_ft", "running_mi")
@@ -124,7 +162,7 @@ def grade_in_note(note: str | None) -> Grade | None:
         return None
 
 
-def new_entry(strava: dict, recording_file: str | None, recorded: dict) -> dict:
+def new_strava_entry(strava: dict, recording_file: str | None, recorded: dict) -> dict:
     """The entry for an activity entering the log. A "Grade: X" line in its Strava private note
     becomes its grade now and never again, so a grade cleared on the page stays cleared."""
     grade = grade_in_note(strava["private_note"])
@@ -134,6 +172,26 @@ def new_entry(strava: dict, recording_file: str | None, recorded: dict) -> dict:
         "recorded": recorded,
         "manual": {} if grade is None else {"grade": grade.value},
     }
+
+
+def new_file_entry(file_block: dict, recording_file: str, recorded: dict) -> dict:
+    return {"file": file_block, "recording_file": recording_file, "recorded": recorded, "manual": {}}
+
+
+def replace_file_entries(entries: dict[str, dict], strava_ids: list[str], activity_files_dir: Path) -> dict[str, str]:
+    """For each newly added Strava activity that was already in the log from an activity file,
+    move the file entry's edits to it and remove the file entry. Returns file entry id -> Strava
+    activity id."""
+    replaced: dict[str, str] = {}
+    for strava_id in strava_ids:
+        for file_id in same_activity_ids(entries, start_utc(entries[strava_id])):
+            if source_of(entries[file_id]) != Source.FILE:
+                continue
+            # Edits made on the page win over a grade from Strava's private note.
+            entries[strava_id]["manual"] = {**entries[strava_id]["manual"], **entries[file_id]["manual"]}
+            remove_entry(entries, file_id, activity_files_dir)
+            replaced[file_id] = strava_id
+    return replaced
 
 
 def remove_entry(entries: dict[str, dict], activity_id: str, activity_files_dir: Path) -> None:

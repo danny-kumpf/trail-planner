@@ -1,4 +1,4 @@
-"""Recompute every activity's `recorded` block from its Strava summary and recording file.
+"""Recompute every activity's `recorded` block from its source block and recording file.
 
 Usage: uv run python -m trail_trainer.rebuild_training_log
 
@@ -13,12 +13,10 @@ from trail_trainer.training_log import DEFAULT_ACTIVITY_FILES_DIR, DEFAULT_LOG_P
 
 
 def rebuild_training_log(log_path: Path, activity_files_dir: Path) -> dict[str, str]:
-    """Rebuild every entry that has a Strava summary; returns the ones that failed, with why."""
+    """Rebuild every entry; returns the ones that failed, with why."""
     entries = read_log(log_path)
     failed: dict[str, str] = {}
     for activity_id, entry in entries.items():
-        if "strava" not in entry:
-            continue
         try:
             entry["recorded"] = recorded_for_entry(entry, activity_files_dir)
         except (ValueError, OSError) as e:

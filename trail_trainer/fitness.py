@@ -28,7 +28,7 @@ from trail_trainer.climb_model import (
     fit_climb_model,
     time_weighted_mean,
 )
-from trail_trainer.training_log import Activity, ModelChoice, activity_from_entry, read_log
+from trail_trainer.training_log import Activity, ModelChoice, Source, activity_from_entry, read_log, source_of
 from trail_trainer.trails import PROJECT_ROOT
 
 DEFAULT_CLIMB_BLOCKS_PATH = PROJECT_ROOT / "climb_blocks.json"
@@ -128,7 +128,7 @@ def modelled_blocks(blocks: list[ClimbBlock]) -> list[ClimbBlock]:
 
 def could_be_explored(activity: Activity, entry: dict) -> bool:
     """Covers distance, with a recording of where it went."""
-    return activity.type.covers_distance and bool(entry.get("recording_file")) and "strava" in entry
+    return activity.type.covers_distance and bool(entry.get("recording_file"))
 
 
 def could_be_effort(activity: Activity, entry: dict) -> bool:
@@ -138,12 +138,11 @@ def could_be_effort(activity: Activity, entry: dict) -> bool:
 
 def analysis_inputs(entry: dict) -> dict:
     """What an activity's climb blocks are computed from. Stored blocks are reused while it matches."""
-    return {
-        "version": CLIMB_ANALYSIS_VERSION,
-        "recording_file": entry["recording_file"],
-        "start_utc": entry["strava"]["start_utc"],
-        "elapsed_time_s": entry["strava"]["elapsed_time_s"],
-    }
+    inputs = {"version": CLIMB_ANALYSIS_VERSION, "recording_file": entry["recording_file"]}
+    if source_of(entry) == Source.STRAVA:
+        # Strava's crop decides which part of the recording is analysed.
+        inputs |= {"start_utc": entry["strava"]["start_utc"], "elapsed_time_s": entry["strava"]["elapsed_time_s"]}
+    return inputs
 
 
 def stored_analysis(entry: dict, activity_files_dir: Path) -> dict:

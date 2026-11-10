@@ -74,23 +74,6 @@ def test_reimporting_keeps_hand_edits(workspace):
     assert workout.type == ActivityType.HIKE
 
 
-def test_test_entries_are_replaced_keeping_their_edits(workspace):
-    zip_path, log_path, files_dir = workspace
-    test_entry = {
-        "recorded": {"name": "weighted carry", "type": "hike", "start_local": "2026-09-30T12:48:20",
-                     "moving_time_s": 1, "distance_mi": 1, "vert_ft": 1, "running_mi": 0},
-        "manual": {"grade": "A"},
-    }
-    log_path.write_text(json.dumps({"gpx:green_from_gregory": test_entry}))
-    report = import_strava_export(zip_path, log_path, files_dir)
-    assert report.test_entries_replaced == {"gpx:green_from_gregory": HIKE_ID}
-
-    entries = json.loads(log_path.read_text())
-    assert "gpx:green_from_gregory" not in entries
-    # The edit made on the test entry wins over the grade in Strava's note.
-    assert entries[HIKE_ID]["manual"] == {"grade": "A"}
-
-
 def test_rebuild_recomputes_from_stored_files(workspace):
     zip_path, log_path, files_dir = workspace
     import_strava_export(zip_path, log_path, files_dir)

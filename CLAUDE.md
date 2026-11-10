@@ -17,6 +17,7 @@ uv run python -m trail_trainer.app           # run at http://localhost:5000
 uv run pytest                                # tests
 uv run python -m trail_trainer.update_trails # recompute trail stats from gpx/
 uv run python -m trail_trainer.import_strava_export <export.zip>
+uv run python -m trail_trainer.import_activity_files [--type TYPE] <file or folder>...
 uv run python -m trail_trainer.rebuild_training_log
 uv run python -m trail_trainer.readme_screenshots
 ```
@@ -35,12 +36,13 @@ uv run python -m trail_trainer.readme_screenshots
 | `week_plans.json` | Plans saved for each week, with the settings they were shuffled with |
 | `trail_trainer/week_plans.py` | Saves and loads the plans for each week |
 | `trail_trainer/effort.py` | Recording → running and hiking miles (by cadence, or by pace alone), heart rate |
-| `training_log.json` | Training log: Strava's summary, our numbers and the user's edits for every activity |
-| `activity_files/` | Each activity's recording (FIT or GPX from the export, or streams from a sync), named by Strava activity id |
-| `trail_trainer/recording.py` | Reads FIT and GPX files and Strava's streams into one form; moving time |
-| `trail_trainer/activity_stats.py` | Strava summary + recording → the numbers the training log shows |
+| `training_log.json` | Training log: each activity's source, our numbers and the user's edits |
+| `activity_files/` | Each activity's recording (FIT or GPX from the export or a file import, or streams from a sync), named by entry id |
+| `trail_trainer/recording.py` | Reads FIT and GPX files and Strava's streams into one form, and what a file says about its activity (name, sport); moving time |
+| `trail_trainer/activity_stats.py` | Source block + recording → the numbers the training log shows |
 | `trail_trainer/training_log.py` | Loads the training log, applying overrides; validates edits |
 | `trail_trainer/import_strava_export.py` | Script that imports a Strava account export into the training log |
+| `trail_trainer/import_activity_files.py` | Script that imports individual FIT/GPX files from any source into the training log |
 | `trail_trainer/rebuild_training_log.py` | Script that recomputes the training log from the stored recordings |
 | `trail_trainer/strava_api.py` | Strava's API: approving access, refreshing tokens, reading activities |
 | `trail_trainer/strava_sync.py` | Brings the training log up to date with Strava |
@@ -87,6 +89,8 @@ Saved plans, keyed by the week's first day, each with the settings it was shuffl
 
 ### `training_log.json`
 
+Each entry has exactly one source block, `strava` or `file` (see `Source` in `training_log.py`), plus `recording_file`, `recorded` and `manual`. An activity from Strava:
+
 ```json
 "20455753192": {
     "strava": {"name": "Mallory Cave with Jess", "type": "Hike", "start_utc": "2026-10-04T21:25:55+00:00",
@@ -102,9 +106,21 @@ Saved plans, keyed by the week's first day, each with the settings it was shuffl
 ```
 
 - `strava` is Strava's own summary, as the export or a sync gives it. Its numbers aren't shown; they're kept for reference and for comparing with ours. `workout_type` is how Strava marks a race. The export doesn't give it, so it's `null` until the first sync.
-- `recording_file` is the activity's recording in `activity_files/`: a FIT or GPX file from the export, or `<id>.streams.json.gz` from a sync. It is `null` for an activity entered by hand on Strava.
+- `recording_file` is the activity's recording in `activity_files/`: a FIT or GPX file from the export or a file import, or `<id>.streams.json.gz` from a sync. It is `null` for an activity entered by hand on Strava.
+- `file` replaces `strava` for an activity imported from a file. Its entry is keyed by `file-` and its UTC start, e.g. `file-20261004T212555Z`:
+
+  ```json
+  "file": {"name": "Mallory Cave", "type": "hike", "start_utc": "2026-10-04T21:25:55+00:00",
+           "file_name": "Mallory_Cave.fit"}
+  ```
+
+  `type` is already the log's type (from `--type` or the file's sport), and the whole recording is used, with no crop.
 - `recorded` is what the page shows. It is computed from `strava` and the recording file, and rewritten whenever they change.
 - `manual` holds the user's edits. It's written only when they save on the page, and never touched by imports or syncs. Its `model_choice` is the activity's Require (`"require"`) or Exclude (`"exclude"`) on the Fitness tab.
+
+### One activity from several sources
+
+Entries starting within `SAME_ACTIVITY_MAX_START_DIFFERENCE` (60 s) of each other are the same activity. A file import skips an activity already from Strava and updates one already from a file. An export import or sync that adds a Strava activity replaces a file entry for it, moving its `manual` over (`replace_file_entries`).
 
 ### Sync details
 
@@ -115,8 +131,8 @@ Saved plans, keyed by the week's first day, each with the settings it was shuffl
 ## After changing a method
 
 - **Trail stats** (`trail_stats.py`): run `update_trails`, and `rebuild_training_log`, since activity vert uses the same method.
-- **Activity numbers** (`activity_stats.py`, `effort.py`, `recording.py`): run `rebuild_training_log` to recompute every activity from the stored files. It keeps `manual` edits.
-- **Climbs or climb blocks** (`climb_signals.py`, `climb_blocks.py`): increase `CLIMB_ANALYSIS_VERSION` in `climb_blocks.py` so cached blocks are recomputed. Each `climb_blocks.json` entry records the recording, Strava's crop and the analysis version it was computed from, and is redone when any of them changes. Deleting the file has the same effect.
+- **Activity numbers** (`activity_stats.py`, `effort.py`, `recording.py`): run `rebuild_training_log` to recompute every activity, from either source, from the stored files. It keeps `manual` edits.
+- **Climbs or climb blocks** (`climb_signals.py`, `climb_blocks.py`): increase `CLIMB_ANALYSIS_VERSION` in `climb_blocks.py` so cached blocks are recomputed. Each `climb_blocks.json` entry records the recording, Strava's crop (for an activity from Strava) and the analysis version it was computed from, and is redone when any of them changes. Deleting the file has the same effect.
 - **Heart rate monitor**: `HR_LAG_S` in `climb_blocks.py` is a typical lag, not a measured one; revisit it if the monitor changes.
 
 ## Screenshots

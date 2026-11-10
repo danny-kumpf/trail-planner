@@ -61,9 +61,35 @@ Use it to lower `runnable_mi` on a trail whose gentle grades are too rocky to ru
 
 ### 4. Bring in your activities
 
-The Training Log and Fitness tabs need your recorded activities. There are two ways to get them from Strava. Most people will do both: the account export once for their whole history, then syncing to keep up to date.
+The Training Log and Fitness tabs need your recorded activities. There are three ways to bring them in:
 
-#### a. Strava account export (free)
+- **[Activity files](#a-activity-files)**, one or more at a time, from any watch, app or website that lets you download FIT or GPX files. Free, and doesn't need Strava.
+- **[Strava's account export](#b-strava-account-export)**, your whole Strava history at once. Free.
+- **[Sync with Strava](#c-sync-with-strava)**, a button that fetches new activities. Needs a paid Strava subscription.
+
+Most Strava users import the account export once for their history, then keep up to date by syncing or, without a subscription, by importing new activities' files. Mixing them is fine: an activity is recognized by when it started, so it never appears twice.
+
+#### a. Activity files
+
+Download your activity as a FIT or GPX file. For example:
+
+- **Garmin Connect:** on the activity's page, the gear icon → **Export Original** (a zip holding a FIT file; unzip it) or **Export to GPX**.
+- **Strava:** on the activity's page, **⋯ → Export Original** or **Export GPX**.
+- **Other watches and apps** (Coros, Suunto, Wahoo, phone apps) have a similar export on each activity.
+
+Then import the file, several files, or a folder of them:
+
+```
+uv run python -m trail_trainer.import_activity_files ~/Downloads/Morning_Hike.fit
+```
+
+Each activity is named after its GPX track's name, or after the file name if it has none (FIT files don't), so rename the file first to name the activity. Its type (hike, run, bike, ski or workout) comes from the sport the file records. If a file doesn't record one, the import says so; give it with `--type`, e.g. `--type hike` (the choices are `hike`, `trail_run`, `bike`, `race`, `ski`, `workout`). You can also change an activity's type later on the Training Log.
+
+FIT and GPX files are supported, optionally gzipped (`.fit.gz`, `.gpx.gz`). TCX files aren't yet.
+
+Importing a file again, or another file of the same activity, updates its entry and keeps your edits. A file of an activity that's already in the log from Strava is skipped. If an activity you imported as a file later comes in from Strava, by export or sync, Strava's copy replaces it and keeps your edits.
+
+#### b. Strava account export
 
 Strava lets anyone download their whole history as a zip file:
 
@@ -78,7 +104,7 @@ This copies each activity's recording into `activity_files/` and adds it to `tra
 
 Two things the export doesn't include, which syncing fills in: whether a run was marked as a race, and the local start time (for GPX recordings, this computer's time zone is used instead).
 
-#### b. Sync with Strava (needs a Strava subscription)
+#### c. Sync with Strava
 
 The **Sync with Strava** button on the Training Log fetches new activities directly from Strava. It uses Strava's API, and since June 2026 Strava only allows API access to people with a paid Strava subscription, even for personal tools like this one. You also have to register your own API application with Strava; this app doesn't come with one.
 
@@ -97,16 +123,6 @@ Keep `strava_app.json` and `strava_tokens.json` private. Git already ignores the
 
 Strava allows 100 requests every 15 minutes, and each new activity takes two. Syncing a long history from scratch will hit that limit: the sync keeps what it got and tells you how many are left, and you sync again in 15 minutes. Importing the account export first avoids this, since the sync then only fetches what's newer.
 
-#### Without a Strava subscription
-
-Without a subscription, the account export is the only way in. To bring in new activities, request a fresh export and import it again; the import updates what's already there and adds what's new, and your edits are kept.
-
-Strava also offers a download of a single activity (**⋯ → Export Original** on the activity's page), but the app can't import those individual files yet; it only reads the whole-account zip.
-
-#### Without Strava at all
-
-The app only reads activities from Strava for now, so without a Strava account the Training Log and Fitness tabs stay empty. Trail Planning works without any activities.
-
 ## Using the app
 
 Each tab is meant to be explorable from the page itself. For details on what the numbers mean and how they're worked out, see:
@@ -122,7 +138,7 @@ Everything stays on your computer, in these files in the project folder. Git ign
 | File | What it holds |
 |---|---|
 | `gpx/`, `available_trails.json` | Your trails |
-| `training_log.json` | Every activity: Strava's summary, the app's numbers, and your edits |
+| `training_log.json` | Every activity: where it came from, the app's numbers, and your edits |
 | `activity_files/` | Each activity's recording |
 | `week_plans.json` | The plans you've saved for each week |
 | `climb_blocks.json` | A cache for the Fitness tab; safe to delete |
@@ -130,7 +146,7 @@ Everything stays on your computer, in these files in the project folder. Git ign
 
 ## Not yet supported
 
-- Importing single activity files, or activities from anywhere but Strava.
+- Importing TCX files.
 - Planning by time instead of vert. Time depends on how much of each trail you run, so it would need a pace model.
 - Automatic link-ups. A combined route like `bear_and_green_from_ncar` needs its own entry and GPX file.
 - Removing activities deleted on Strava. A sync lists them under the calendar, and you can delete their entries from `training_log.json` by hand.

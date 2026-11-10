@@ -1,7 +1,8 @@
-"""The `recorded` block of a training-log entry: what we compute from Strava's summary of an
-activity and its recording file.
+"""The `recorded` block of a training-log entry: what we compute from its source (Strava's summary
+of the activity, or an imported file's description of it) and its recording file.
 """
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from trail_trainer.effort import (
 )
 from trail_trainer.recording import Recording, moving_time_s, read_recording
 from trail_trainer.trail_stats import FT_PER_M, M_PER_MI, profile_from_along_track, stats_from_profile
-from trail_trainer.training_log import ActivityType
+from trail_trainer.training_log import ActivityType, Source, source_of
 
 # Strava's activity types, with spaces removed and lowercased: the export writes "Backcountry
 # Ski" where the API writes "BackcountrySki". Anything else is a Workout.
@@ -68,8 +69,8 @@ def local_start(strava: dict, recording: Recording | None) -> datetime:
     computer's time zone (right unless the activity was recorded while travelling)."""
     if strava.get("start_local"):
         return datetime.fromisoformat(strava["start_local"])
-    if recording is not None and recording.local_start is not None:
-        return recording.local_start
+    if recording is not None:
+        return recording_local_start(recording)
     return datetime.fromisoformat(strava["start_utc"]).astimezone().replace(tzinfo=None)
 
 
@@ -102,51 +103,109 @@ def as_kept_on_strava(strava: dict, recording: Recording) -> Recording:
     return recording.between(start, start + timedelta(seconds=strava["elapsed_time_s"]))
 
 
-def recorded_block(strava: dict, recording: Recording | None) -> dict:
-    activity_type = activity_type_for(strava["type"], strava["workout_type"])
-    if recording is not None:
-        recording = as_kept_on_strava(strava, recording)
-        distance_mi = float(recording.step_m().sum()) / M_PER_MI
-        time_s = moving_time_s(recording)
-        vert = vert_ft(recording)
-        run_mi = running_mi(activity_type, recording)
-        heart_rate = heart_rate_summary(recorded_track_from_recording(recording))
-        avg_heart_rate_bpm = heart_rate.avg_bpm if heart_rate else None
-        max_heart_rate_bpm = heart_rate.max_bpm if heart_rate else None
-    else:
-        distance_mi = strava["distance_m"] / M_PER_MI
-        time_s = strava["moving_time_s"]
-        vert = (strava["elevation_gain_m"] or 0.0) * FT_PER_M
-        run_mi = running_mi_from_summary(activity_type, distance_mi, time_s)
-        avg_heart_rate_bpm = strava["avg_heart_rate_bpm"]
-        max_heart_rate_bpm = strava["max_heart_rate_bpm"]
+@dataclass(frozen=True)
+class Measures:
+    """An activity's numbers, from its recording or, without one, from Strava's summary."""
 
+    moving_time_s: float
+    distance_mi: float
+    vert_ft: float
+    running_mi: float
+    avg_heart_rate_bpm: float | None
+    max_heart_rate_bpm: float | None
+
+
+def measures_from_recording(activity_type: ActivityType, recording: Recording) -> Measures:
+    heart_rate = heart_rate_summary(recorded_track_from_recording(recording))
+    return Measures(
+        moving_time_s=moving_time_s(recording),
+        distance_mi=float(recording.step_m().sum()) / M_PER_MI,
+        vert_ft=vert_ft(recording),
+        running_mi=running_mi(activity_type, recording),
+        avg_heart_rate_bpm=heart_rate.avg_bpm if heart_rate else None,
+        max_heart_rate_bpm=heart_rate.max_bpm if heart_rate else None,
+    )
+
+
+def measures_from_strava_summary(activity_type: ActivityType, strava: dict) -> Measures:
+    distance_mi = strava["distance_m"] / M_PER_MI
+    return Measures(
+        moving_time_s=strava["moving_time_s"],
+        distance_mi=distance_mi,
+        vert_ft=(strava["elevation_gain_m"] or 0.0) * FT_PER_M,
+        running_mi=running_mi_from_summary(activity_type, distance_mi, strava["moving_time_s"]),
+        avg_heart_rate_bpm=strava["avg_heart_rate_bpm"],
+        max_heart_rate_bpm=strava["max_heart_rate_bpm"],
+    )
+
+
+def recorded_fields(name: str, activity_type: ActivityType, start: datetime, measures: Measures) -> dict:
+    """The `recorded` block, rounded as it's stored."""
     recorded = {
-        "name": strava["name"],
+        "name": name,
         "type": activity_type.value,
-        "start_local": local_start(strava, recording).isoformat(),
-        "moving_time_s": round(time_s),
-        "distance_mi": round(distance_mi, 2),
-        "vert_ft": round(vert),
-        "running_mi": round(run_mi, 2),
+        "start_local": start.isoformat(),
+        "moving_time_s": round(measures.moving_time_s),
+        "distance_mi": round(measures.distance_mi, 2),
+        "vert_ft": round(measures.vert_ft),
+        "running_mi": round(measures.running_mi, 2),
     }
-    if avg_heart_rate_bpm is not None:
-        recorded["avg_heart_rate_bpm"] = round(avg_heart_rate_bpm)
-    if max_heart_rate_bpm is not None:
-        recorded["max_heart_rate_bpm"] = round(max_heart_rate_bpm)
+    if measures.avg_heart_rate_bpm is not None:
+        recorded["avg_heart_rate_bpm"] = round(measures.avg_heart_rate_bpm)
+    if measures.max_heart_rate_bpm is not None:
+        recorded["max_heart_rate_bpm"] = round(measures.max_heart_rate_bpm)
     return recorded
 
 
+def recorded_from_strava(strava: dict, recording: Recording | None) -> dict:
+    """The `recorded` block of an activity from Strava: from the part of its recording Strava kept,
+    or from Strava's summary if it has no recording."""
+    activity_type = activity_type_for(strava["type"], strava["workout_type"])
+    if recording is not None:
+        recording = as_kept_on_strava(strava, recording)
+        measures = measures_from_recording(activity_type, recording)
+    else:
+        measures = measures_from_strava_summary(activity_type, strava)
+    return recorded_fields(strava["name"], activity_type, local_start(strava, recording), measures)
+
+
+def recording_local_start(recording: Recording) -> datetime:
+    """The recording's own local start, else its start in this computer's time zone (right unless
+    the activity was recorded while travelling)."""
+    if recording.local_start is not None:
+        return recording.local_start
+    return recording.start.astimezone().replace(tzinfo=None)
+
+
+def recorded_from_file(file_block: dict, recording: Recording) -> dict:
+    """The `recorded` block of an activity imported from a file: all of its recording."""
+    activity_type = ActivityType(file_block["type"])
+    measures = measures_from_recording(activity_type, recording)
+    return recorded_fields(file_block["name"], activity_type, recording_local_start(recording), measures)
+
+
 def kept_recording(entry: dict, activity_files_dir: Path) -> Recording | None:
-    """The part of a log entry's recording that Strava kept; None if it has no recording."""
+    """The part of a log entry's recording that counts: what Strava kept of an activity from
+    Strava, or all of an imported file. None if it has no recording."""
     recording_file = entry.get("recording_file")
     if not recording_file:
         return None
-    return as_kept_on_strava(entry["strava"], read_recording(activity_files_dir / recording_file))
+    recording = read_recording(activity_files_dir / recording_file)
+    match source_of(entry):
+        case Source.STRAVA:
+            return as_kept_on_strava(entry["strava"], recording)
+        case Source.FILE:
+            return recording
 
 
 def recorded_for_entry(entry: dict, activity_files_dir: Path) -> dict:
-    """The `recorded` block for a log entry, from its `strava` block and recording file."""
+    """The `recorded` block for a log entry, from its source block and recording file."""
     recording_file = entry.get("recording_file")
     recording = read_recording(activity_files_dir / recording_file) if recording_file else None
-    return recorded_block(entry["strava"], recording)
+    match source_of(entry):
+        case Source.STRAVA:
+            return recorded_from_strava(entry["strava"], recording)
+        case Source.FILE:
+            if recording is None:
+                raise ValueError("an imported file's entry has no recording file")
+            return recorded_from_file(entry["file"], recording)

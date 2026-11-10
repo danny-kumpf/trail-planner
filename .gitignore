@@ -16,3 +16,6 @@ recorded_activities/
 
 # Climb blocks computed from the recordings, kept so the Fitness tab needn't recompute them
 climb_blocks.json
+
+# Personal notes
+danny_notes.md

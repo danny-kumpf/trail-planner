@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 
 from trail_trainer import app as app_module
-from trail_trainer.activity_stats import recorded_block
+from trail_trainer.activity_stats import recorded_from_strava
+from trail_trainer.import_activity_files import import_activity_files
 from trail_trainer.import_strava_export import import_strava_export
 from trail_trainer.recording import Recording, read_recording, recording_from_streams
 from trail_trainer.strava_api import (
@@ -136,7 +137,7 @@ def test_streams_give_the_same_numbers_as_the_recording(hike_recording):
     }
     from_streams = recording_from_streams({"start_utc": strava["start_utc"], "streams": streams_from(hike_recording)})
     assert from_streams.cadence_strides_per_min is not None
-    assert recorded_block(strava, from_streams) == recorded_block(strava, hike_recording)
+    assert recorded_from_strava(strava, from_streams) == recorded_from_strava(strava, hike_recording)
 
 
 def test_new_activity_is_downloaded(paths, hike_recording):
@@ -261,6 +262,24 @@ def test_activities_no_longer_on_strava_are_kept(tmp_path, paths):
         ["weighted carry (20397657728)", "Stairwell weighted carry (19746459323)", "First paced mile! (14456102085)"]
     )
     assert len(load_activities(log_path)) == 3
+
+
+def test_a_synced_activity_replaces_its_imported_file_and_files_arent_reported_missing(tmp_path, paths, hike_recording):
+    log_path, files_dir = paths
+    fit_path = tmp_path / "Weighted_carry.fit.gz"
+    fit_path.write_bytes(HIKE_FIT.read_bytes())
+    [file_label] = import_activity_files([fit_path], log_path, files_dir).added
+    file_id = file_label.rsplit("(", 1)[1].rstrip(")")
+    set_manual(file_id, {"grade": "C"}, log_path)
+
+    # Not on Strava yet: the file's entry isn't reported as gone from Strava.
+    assert sync(FakeStrava([]), log_path, files_dir).not_on_strava == []
+
+    strava = FakeStrava([summary("101", hike_recording)], streams={"101": streams_from(hike_recording)})
+    report = sync(strava, log_path, files_dir)
+    assert report.file_entries_replaced == {file_id: "101"}
+    [activity] = load_activities(log_path)
+    assert activity.id == "101" and activity.grade == Grade.C
 
 
 # ---- Strava's API ----

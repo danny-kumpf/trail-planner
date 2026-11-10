@@ -8,6 +8,7 @@ import gzip
 import json
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 from pathlib import Path
 
 import gpxpy
@@ -158,6 +159,14 @@ def recording_from_gpx(gpx: gpxpy.gpx.GPX) -> Recording:
     )
 
 
+def decoded_fit(data: bytes) -> dict:
+    """A FIT file's messages, by message type."""
+    messages, errors = Decoder(Stream.from_byte_array(bytearray(data))).read()
+    if errors:
+        raise ValueError(f"unreadable FIT file: {errors[0]}")
+    return messages
+
+
 def fit_local_start(messages: dict, start: datetime) -> datetime | None:
     """The start as wall-clock time, from the offset between the activity's local and UTC stamps."""
     for activity in messages.get("activity_mesgs", []):
@@ -170,9 +179,7 @@ def fit_local_start(messages: dict, start: datetime) -> datetime | None:
 
 
 def recording_from_fit(data: bytes) -> Recording:
-    messages, errors = Decoder(Stream.from_byte_array(bytearray(data))).read()
-    if errors:
-        raise ValueError(f"unreadable FIT file: {errors[0]}")
+    messages = decoded_fit(data)
     records = [r for r in messages.get("record_mesgs", []) if r.get("timestamp") is not None]
     if not records:
         raise ValueError("no records")
@@ -248,23 +255,89 @@ def recording_from_streams(stored: dict) -> Recording:
     )
 
 
-def read_recording(path: Path) -> Recording:
-    """A FIT or GPX file as Strava's export stores them, or Strava's streams as a sync stores them;
-    any of them optionally gzipped."""
-    data = path.read_bytes()
-    suffixes = path.name.lower().split(".")[1:]
+class FileFormat(StrEnum):
+    FIT = "fit"
+    GPX = "gpx"
+    # Strava's streams, as a sync stores them.
+    STREAMS = "streams.json"
+
+
+def file_format(file_name: str) -> FileFormat:
+    """The format of a file named e.g. "123.fit", "123.gpx.gz" or "123.streams.json.gz"."""
+    suffixes = file_name.lower().split(".")[1:]
     if suffixes[-1:] == ["gz"]:
-        data = gzip.decompress(data)
         suffixes = suffixes[:-1]
     match suffixes[-2:]:
         case [*_, "fit"]:
-            return recording_from_fit(data)
+            return FileFormat.FIT
         case [*_, "gpx"]:
-            return only_samples_with_position(recording_from_gpx(gpxpy.parse(data.decode("utf-8"))))
+            return FileFormat.GPX
         case ["streams", "json"]:
-            return recording_from_streams(json.loads(data))
+            return FileFormat.STREAMS
         case _:
-            raise ValueError(f"unsupported file type: {path.name}")
+            raise ValueError(f"unsupported file type: {file_name}")
+
+
+def file_contents(path: Path) -> bytes:
+    """The file's bytes, decompressed if it's gzipped."""
+    data = path.read_bytes()
+    return gzip.decompress(data) if path.name.lower().endswith(".gz") else data
+
+
+def read_recording(path: Path) -> Recording:
+    """A FIT or GPX file, or Strava's streams as a sync stores them; any of them optionally gzipped."""
+    data = file_contents(path)
+    match file_format(path.name):
+        case FileFormat.FIT:
+            return recording_from_fit(data)
+        case FileFormat.GPX:
+            return only_samples_with_position(recording_from_gpx(gpxpy.parse(data.decode("utf-8"))))
+        case FileFormat.STREAMS:
+            return recording_from_streams(json.loads(data))
+
+
+@dataclass(frozen=True)
+class FileDescription:
+    """What an activity file says about the activity besides its samples. Each is None if the file
+    doesn't say."""
+
+    name: str | None
+    # The file's own word for the sport, e.g. FIT's "hiking" or a GPX track's "trail_running".
+    sport: str | None
+    # A FIT file's refinement of the sport, e.g. "backcountry" for alpine skiing. GPX has none.
+    sub_sport: str | None
+
+
+# FIT's word for a sport it wasn't told.
+FIT_UNKNOWN_SPORT = "generic"
+
+
+def fit_description(messages: dict) -> FileDescription:
+    sessions = messages.get("session_mesgs", [])
+    # The SDK gives a sport it has no name for as a number, which says nothing to us.
+    sport = next((s["sport"] for s in sessions if isinstance(s.get("sport"), str)), None)
+    sub_sport = next((s["sub_sport"] for s in sessions if isinstance(s.get("sub_sport"), str)), None)
+    if sport == FIT_UNKNOWN_SPORT:
+        sport = None
+    return FileDescription(name=None, sport=sport, sub_sport=sub_sport)
+
+
+def gpx_description(gpx: gpxpy.gpx.GPX) -> FileDescription:
+    track = gpx.tracks[0] if gpx.tracks else None
+    name = (track.name if track else None) or gpx.name
+    return FileDescription(name=name or None, sport=(track.type if track else None) or None, sub_sport=None)
+
+
+def read_description(path: Path) -> FileDescription:
+    """What a FIT or GPX file (optionally gzipped) says about its activity."""
+    data = file_contents(path)
+    match file_format(path.name):
+        case FileFormat.FIT:
+            return fit_description(decoded_fit(data))
+        case FileFormat.GPX:
+            return gpx_description(gpxpy.parse(data.decode("utf-8")))
+        case FileFormat.STREAMS:
+            raise ValueError(f"Strava's streams don't describe their activity: {path.name}")
 
 
 def travels(recording: Recording) -> bool:
